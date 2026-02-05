@@ -38,3 +38,9 @@ Desktop.ini
 *.njsproj
 *.sln
 *.sw?
+
+# Cache files
+.cache/
+mongodb-memory-server/
+backend/node_modules/
+backend/node_modules/.cache/
