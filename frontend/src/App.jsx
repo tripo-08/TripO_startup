@@ -17,6 +17,7 @@ import PassengerBookings from './pages/PassengerBookings';
 import MyRides from './pages/MyRides';
 import ScheduleRide from './pages/ScheduleRide';
 import RideDetails from './pages/RideDetails';
+import CreateRideFromRoute from './pages/CreateRideFromRoute';
 import SplashScreen from './components/common/SplashScreen';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { AdminAuthProvider } from './admin/context/AdminAuthContext';
@@ -46,6 +47,7 @@ function App() {
                 <Route path="/vehicle-information" element={<VehicleInformation />} />
                 <Route path="/my-rides" element={<MyRides />} />
                 <Route path="/schedule-ride" element={<ScheduleRide />} />
+                <Route path="/create-ride-from-route" element={<CreateRideFromRoute />} />
                 <Route path="/ride/:id" element={<RideDetails />} />
                 <Route path="/register" element={<Register />} />
                 <Route path="/login" element={<Login />} />

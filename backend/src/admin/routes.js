@@ -17,4 +17,10 @@ router.post('/stops', authenticateAdmin, adminController.addStop);
 router.get('/stops', authenticateAdmin, adminController.getStops);
 router.delete('/stops/:id', authenticateAdmin, adminController.deleteStop);
 
+// Route Management Routes (Protected)
+router.post('/routes', authenticateAdmin, adminController.addRoute);
+router.get('/routes', authenticateAdmin, adminController.getRoutes);
+router.patch('/routes/:id', authenticateAdmin, adminController.updateRoute);
+router.delete('/routes/:id', authenticateAdmin, adminController.deleteRoute);
+
 module.exports = router;

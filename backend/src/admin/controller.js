@@ -339,6 +339,206 @@ const adminController = {
                 error: { message: 'Failed to delete stop' }
             });
         }
+    },
+
+    /**
+     * Add Predefined Route
+     */
+    addRoute: async (req, res) => {
+        try {
+            const { source, destination, stops, active = true } = req.body;
+
+            // Validation
+            if (!source || !source.name) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'INVALID_SOURCE',
+                        message: 'Source stop name is required'
+                    }
+                });
+            }
+
+            if (!destination || !destination.name) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'INVALID_DESTINATION',
+                        message: 'Destination stop name is required'
+                    }
+                });
+            }
+
+            if (source.name.toLowerCase().trim() === destination.name.toLowerCase().trim()) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'SAME_SOURCE_DESTINATION',
+                        message: 'Source and destination cannot be the same'
+                    }
+                });
+            }
+
+            if (!stops || stops.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'INTERMEDIATE_STOPS_REQUIRED',
+                        message: 'At least one intermediate stop is required'
+                    }
+                });
+            }
+
+            const db = getFirestore();
+
+            const routeData = {
+                source,
+                destination,
+                stops: stops || [],
+                active: Boolean(active),
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                createdBy: 'admin'
+            };
+
+            const docRef = await db.collection('routes').add(routeData);
+
+            logger.info(`Route created: ${docRef.id} from ${source.name} to ${destination.name}`);
+
+            res.status(201).json({
+                success: true,
+                data: {
+                    id: docRef.id,
+                    ...routeData
+                }
+            });
+
+        } catch (error) {
+            logger.error('Error adding route:', error);
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'ADD_ROUTE_ERROR',
+                    message: 'Failed to add route'
+                }
+            });
+        }
+    },
+
+    /**
+     * Get All Routes
+     */
+    getRoutes: async (req, res) => {
+        try {
+            const db = getFirestore();
+            const snapshot = await db.collection('routes')
+                .orderBy('createdAt', 'desc')
+                .get();
+
+            const routes = [];
+            snapshot.forEach(doc => {
+                routes.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+
+            res.status(200).json({
+                success: true,
+                data: routes
+            });
+
+        } catch (error) {
+            logger.error('Error fetching routes:', error);
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'FETCH_ROUTES_ERROR',
+                    message: 'Failed to fetch routes'
+                }
+            });
+        }
+    },
+
+    /**
+     * Update Route
+     */
+    updateRoute: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { source, destination, stops, active } = req.body;
+
+            const db = getFirestore();
+            const routeRef = db.collection('routes').doc(id);
+            const routeDoc = await routeRef.get();
+
+            if (!routeDoc.exists) {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'ROUTE_NOT_FOUND',
+                        message: 'Route not found'
+                    }
+                });
+            }
+
+            const updateData = {
+                updatedAt: new Date().toISOString()
+            };
+
+            if (source) updateData.source = source;
+            if (destination) updateData.destination = destination;
+            if (stops !== undefined) updateData.stops = stops;
+            if (active !== undefined) updateData.active = Boolean(active);
+
+            await routeRef.update(updateData);
+
+            logger.info(`Route updated: ${id}`);
+
+            res.status(200).json({
+                success: true,
+                message: 'Route updated successfully'
+            });
+
+        } catch (error) {
+            logger.error('Error updating route:', error);
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'UPDATE_ROUTE_ERROR',
+                    message: 'Failed to update route'
+                }
+            });
+        }
+    },
+
+    /**
+     * Delete Route
+     */
+    deleteRoute: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const db = getFirestore();
+
+            await db.collection('routes').doc(id).delete();
+
+            logger.info(`Route deleted: ${id}`);
+
+            res.status(200).json({
+                success: true,
+                message: 'Route deleted successfully'
+            });
+
+        } catch (error) {
+            logger.error('Error deleting route:', error);
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'DELETE_ROUTE_ERROR',
+                    message: 'Failed to delete route'
+                }
+            });
+        }
     }
 };
 

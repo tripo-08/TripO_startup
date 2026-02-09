@@ -21,6 +21,7 @@ const cacheRoutes = require('./cache');
 const transportProviderRoutes = require('./transportProviders');
 const adminRoutes = require('../admin/routes');
 const stopRoutes = require('./stops');
+const routesRoutes = require('./routes');
 
 /**
  * Setup all API routes
@@ -55,6 +56,7 @@ function setupRoutes(app) {
         analytics: '/api/analytics',
         cache: '/api/cache',
         transportProviders: '/api/transport-providers',
+        routes: '/api/routes',
       },
     }, 'TripO Backend API is running');
   });
@@ -79,6 +81,7 @@ function setupRoutes(app) {
   apiRouter.use('/transport-providers', transportProviderRoutes);
   apiRouter.use('/admin', adminRoutes);
   apiRouter.use('/stops', stopRoutes);
+  apiRouter.use('/routes', routesRoutes);
   apiRouter.use('/uploads', require('./uploads'));
 
   // Mount auth routes explicitly
