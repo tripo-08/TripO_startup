@@ -939,6 +939,115 @@ class RideService {
       return [];
     }
   }
+
+  /**
+   * Create a ride from predefined route
+   */
+  async createRideFromRoute(driverId, rideData) {
+    try {
+      const { 
+        source, 
+        destination, 
+        intermediateStops, 
+        rideDate, 
+        rideTime, 
+        availableSeats, 
+        pricePerSeat, 
+        vehicle, 
+        routeId 
+      } = rideData;
+
+      // Validate the predefined route exists and is active
+      const { getFirestore } = require('../config/firebase');
+      const db = getFirestore();
+      
+      const routeDoc = await db.collection('routes').doc(routeId).get();
+      if (!routeDoc.exists) {
+        throw new Error('Predefined route not found');
+      }
+
+      const routeData_db = routeDoc.data();
+      if (!routeData_db.active) {
+        throw new Error('Predefined route is not active');
+      }
+
+      // Validate vehicle exists and belongs to driver
+      const vehicleData = await this.validateVehicleForRide(vehicle.id, driverId);
+
+      // Check vehicle capacity
+      if (availableSeats > vehicleData.details.seats) {
+        throw new Error(`Vehicle capacity exceeded. Maximum seats: ${vehicleData.details.seats}`);
+      }
+
+      // Create ride data structure
+      const enhancedRideData = {
+        driverId,
+        source: {
+          name: source.name,
+          coordinates: source.coordinates || null
+        },
+        destination: {
+          name: destination.name,
+          coordinates: destination.coordinates || null
+        },
+        intermediateStops: intermediateStops || [],
+        departureDate: rideDate,
+        departureTime: rideTime,
+        totalSeats: availableSeats,
+        availableSeats: availableSeats,
+        pricePerSeat: parseFloat(pricePerSeat),
+        vehicle: {
+          id: vehicleData.id,
+          make: vehicleData.details.make,
+          model: vehicleData.details.model,
+          year: vehicleData.details.year,
+          color: vehicleData.details.color,
+          licensePlate: vehicleData.details.licensePlate,
+          seats: vehicleData.details.seats,
+          fuelType: vehicleData.details.fuelType,
+          transmission: vehicleData.details.transmission,
+          amenities: vehicleData.amenities || [],
+          verified: vehicleData.isFullyVerified,
+          verificationLevel: vehicleData.verification.verificationLevel || 'basic',
+          type: this.getVehicleCategory(vehicleData.details)
+        },
+        routeInfo: {
+          routeId: routeId,
+          createdFromPredefinedRoute: true,
+          originalRoute: {
+            source: routeData_db.source,
+            destination: routeData_db.destination,
+            stops: routeData_db.stops
+          }
+        },
+        status: 'published',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        preferences: {
+          smoking: false,
+          pets: false,
+          instantBooking: true
+        }
+      };
+
+      // Save ride to Firebase Realtime Database
+      const newRideRef = this.getDB().ref('rides').push();
+      await newRideRef.set(enhancedRideData);
+
+      // Update vehicle usage statistics
+      await this.updateVehicleUsage(vehicleData.id, 'ride_created');
+
+      logger.info(`Ride created from predefined route: ${newRideRef.key} by driver ${driverId}`);
+
+      return {
+        id: newRideRef.key,
+        ...enhancedRideData
+      };
+    } catch (error) {
+      logger.error('Error creating ride from route:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new RideService();

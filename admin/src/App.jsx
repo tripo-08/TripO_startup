@@ -5,6 +5,7 @@ import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import UserList from './pages/UserList';
 import StopsManagement from './pages/StopsManagement';
+import RoutesManagement from './pages/RoutesManagement';
 import AdminLayout from './components/AdminLayout';
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
             <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
             <Route path="/admin/stops" element={<StopsManagement />} />
+            <Route path="/admin/routes" element={<RoutesManagement />} />
             <Route path="/admin/passengers" element={<UserList type="passenger" />} />
             <Route path="/admin/providers" element={<UserList type="provider" />} />
           </Route>

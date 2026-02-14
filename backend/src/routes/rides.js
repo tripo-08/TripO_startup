@@ -4,42 +4,6 @@ const rideService = require('../services/rideService');
 const authMiddleware = require('../middleware/auth');
 const router = express.Router();
 
-// Middleware to verify Firebase token
-const verifyToken = async (req, res, next) => {
-    try {
-        const token = req.headers.authorization?.split(' ')[1];
-        if (!token) {
-            return res.status(401).json({ error: 'No token provided' });
-        }
-
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        req.user = decodedToken;
-        next();
-    } catch (error) {
-        console.error('Token verification error:', error);
-        res.status(401).json({ error: 'Invalid token' });
-    }
-};
-
-// Middleware to check if user is a provider
-const requireProvider = async (req, res, next) => {
-    try {
-        const userRef = db.ref(`users/${req.user.uid}`);
-        const snapshot = await userRef.once('value');
-        const userData = snapshot.val();
-
-        if (!userData || userData.role !== 'provider') {
-            return res.status(403).json({ error: 'Provider access required' });
-        }
-
-        req.userData = userData;
-        next();
-    } catch (error) {
-        console.error('Provider check error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-};
-
 // GET /api/rides - Search rides with filters including vehicle-based filters
 router.get('/', [
     query('origin').optional().isString().trim(),
@@ -75,6 +39,54 @@ router.get('/', [
         });
     } catch (error) {
         console.error('Error searching rides:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
+    }
+});
+
+// POST /api/rides/create-from-route - Create ride from predefined route
+router.post('/create-from-route', authMiddleware.authenticateToken, authMiddleware.requireProvider, [
+    body('source.name').notEmpty().trim().withMessage('Source name is required'),
+    body('destination.name').notEmpty().trim().withMessage('Destination name is required'),
+    body('intermediateStops').isArray().withMessage('Intermediate stops must be an array'),
+    body('rideDate').isISO8601().withMessage('Valid ride date is required'),
+    body('rideTime').matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Valid ride time is required'),
+    body('availableSeats').isInt({ min: 1, max: 50 }).withMessage('Available seats must be between 1 and 50'),
+    body('pricePerSeat').isFloat({ min: 1 }).withMessage('Price per seat must be greater than 0'),
+    body('vehicle.id').notEmpty().withMessage('Vehicle ID is required'),
+    body('routeId').notEmpty().withMessage('Route ID is required')
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ 
+                success: false,
+                errors: errors.array() 
+            });
+        }
+
+        const ride = await rideService.createRideFromRoute(req.user.uid, req.body);
+
+        res.status(201).json({
+            success: true,
+            data: ride,
+            message: 'Ride created from predefined route successfully'
+        });
+    } catch (error) {
+        console.error('Error creating ride from route:', error);
+        
+        if (error.message.includes('Vehicle not found') || 
+            error.message.includes('Route not found') ||
+            error.message.includes('Vehicle capacity exceeded') ||
+            error.message.includes('cannot be used for rides')) {
+            return res.status(400).json({ 
+                success: false,
+                error: error.message 
+            });
+        }
+        
         res.status(500).json({ 
             success: false,
             error: 'Internal server error' 

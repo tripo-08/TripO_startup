@@ -7,7 +7,8 @@ import {
     LayoutDashboard,
     LogOut,
     ShieldCheck,
-    MapPin
+    MapPin,
+    Route
 } from 'lucide-react';
 
 const AdminLayout = () => {
@@ -25,6 +26,7 @@ const AdminLayout = () => {
     const navItems = [
         { path: '/admin/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
         { path: '/admin/stops', label: 'Manage Stops', icon: <MapPin size={20} /> },
+        { path: '/admin/routes', label: 'Predefined Routes', icon: <Route size={20} /> },
         { path: '/admin/passengers', label: 'Passengers', icon: <Users size={20} /> },
         { path: '/admin/providers', label: 'Service Providers', icon: <Car size={20} /> },
     ];

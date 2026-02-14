@@ -166,12 +166,20 @@ export default function ProviderHome() {
                 <div className="bg-gradient-to-r from-blue-900 to-blue-700 rounded-2xl p-5 text-white shadow-lg">
                     <h2 className="text-xl font-bold mb-2">Ready to drive?</h2>
                     <p className="text-blue-100 mb-4 text-sm">Schedule your next ride and start earning.</p>
-                    <button
-                        onClick={handleScheduleRide}
-                        className="bg-white text-blue-900 px-4 py-2 rounded-lg font-bold text-sm hover:bg-gray-100 transition-colors"
-                    >
-                        Create New Ride
-                    </button>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={handleScheduleRide}
+                            className="bg-white text-blue-900 px-4 py-2 rounded-lg font-bold text-sm hover:bg-gray-100 transition-colors"
+                        >
+                            Create New Ride
+                        </button>
+                        <button
+                            onClick={() => navigate('/create-ride-from-route')}
+                            className="bg-blue-800 border border-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition-colors"
+                        >
+                            Create from Route
+                        </button>
+                    </div>
                 </div>
 
                 {/* Quick Stats */}
