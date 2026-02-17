@@ -20,9 +20,9 @@ router.get('/', [
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                errors: errors.array() 
+                errors: errors.array()
             });
         }
 
@@ -39,9 +39,9 @@ router.get('/', [
         });
     } catch (error) {
         console.error('Error searching rides:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -61,9 +61,9 @@ router.post('/create-from-route', authMiddleware.authenticateToken, authMiddlewa
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                errors: errors.array() 
+                errors: errors.array()
             });
         }
 
@@ -76,20 +76,29 @@ router.post('/create-from-route', authMiddleware.authenticateToken, authMiddlewa
         });
     } catch (error) {
         console.error('Error creating ride from route:', error);
-        
-        if (error.message.includes('Vehicle not found') || 
+
+        if (error.message.includes('Vehicle not found') ||
             error.message.includes('Route not found') ||
             error.message.includes('Vehicle capacity exceeded') ||
             error.message.includes('cannot be used for rides')) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                error: error.message 
+                error: error.message
             });
         }
-        
-        res.status(500).json({ 
+
+        // DEBUGGING: Write error to file
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const logPath = path.join(process.cwd(), 'error_log.txt');
+            fs.appendFileSync(logPath, `[${new Date().toISOString()}] Create Ride Error: ${error.message}\nStack: ${error.stack}\n\n`);
+        } catch (e) { console.error('Failed to write log', e); }
+
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: `Internal server error: ${error.message}`,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 });
@@ -110,9 +119,9 @@ router.post('/', authMiddleware.authenticateToken, authMiddleware.requireProvide
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                errors: errors.array() 
+                errors: errors.array()
             });
         }
 
@@ -125,18 +134,18 @@ router.post('/', authMiddleware.authenticateToken, authMiddleware.requireProvide
         });
     } catch (error) {
         console.error('Error creating ride:', error);
-        
-        if (error.message.includes('Vehicle not found') || 
+
+        if (error.message.includes('Vehicle not found') ||
             error.message.includes('cannot be used for rides')) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                error: error.message 
+                error: error.message
             });
         }
-        
-        res.status(500).json({ 
+
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -152,17 +161,17 @@ router.get('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching ride:', error);
-        
+
         if (error.message === 'Ride not found') {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                error: error.message 
+                error: error.message
             });
         }
-        
-        res.status(500).json({ 
+
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -183,9 +192,9 @@ router.put('/:id', authMiddleware.authenticateToken, authMiddleware.requireProvi
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                errors: errors.array() 
+                errors: errors.array()
             });
         }
 
@@ -198,26 +207,26 @@ router.put('/:id', authMiddleware.authenticateToken, authMiddleware.requireProvi
         });
     } catch (error) {
         console.error('Error updating ride:', error);
-        
+
         if (error.message === 'Ride not found') {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                error: error.message 
+                error: error.message
             });
         }
-        
+
         if (error.message.includes('You can only update your own rides') ||
             error.message.includes('Vehicle not found') ||
             error.message.includes('cannot be used for rides')) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                error: error.message 
+                error: error.message
             });
         }
-        
-        res.status(500).json({ 
+
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -228,22 +237,22 @@ router.delete('/:id', authMiddleware.authenticateToken, authMiddleware.requirePr
         // Use Firebase directly for cancellation since it's a simple status update
         const admin = require('firebase-admin');
         const db = admin.database();
-        
+
         const rideRef = db.ref(`rides/${req.params.id}`);
         const snapshot = await rideRef.once('value');
 
         if (!snapshot.exists()) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                error: 'Ride not found' 
+                error: 'Ride not found'
             });
         }
 
         const rideData = snapshot.val();
         if (rideData.driverId !== req.user.uid) {
-            return res.status(403).json({ 
+            return res.status(403).json({
                 success: false,
-                error: 'You can only cancel your own rides' 
+                error: 'You can only cancel your own rides'
             });
         }
 
@@ -261,9 +270,9 @@ router.delete('/:id', authMiddleware.authenticateToken, authMiddleware.requirePr
         });
     } catch (error) {
         console.error('Error cancelling ride:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -277,9 +286,9 @@ router.get('/provider/my-rides', authMiddleware.authenticateToken, authMiddlewar
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                errors: errors.array() 
+                errors: errors.array()
             });
         }
 
@@ -291,9 +300,9 @@ router.get('/provider/my-rides', authMiddleware.authenticateToken, authMiddlewar
         });
     } catch (error) {
         console.error('Error fetching provider rides:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -309,9 +318,9 @@ router.get('/provider/available-vehicles', authMiddleware.authenticateToken, aut
         });
     } catch (error) {
         console.error('Error fetching available vehicles:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -327,9 +336,9 @@ router.get('/provider/vehicle-utilization', authMiddleware.authenticateToken, au
         });
     } catch (error) {
         console.error('Error generating vehicle utilization report:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -345,9 +354,9 @@ router.get('/search/filters', async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching filter options:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -363,9 +372,9 @@ router.get('/search/popular-routes', async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching popular routes:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });
@@ -379,9 +388,9 @@ router.get('/search/vehicle-stats', [
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                errors: errors.array() 
+                errors: errors.array()
             });
         }
 
@@ -393,9 +402,9 @@ router.get('/search/vehicle-stats', [
         });
     } catch (error) {
         console.error('Error fetching vehicle stats:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Internal server error' 
+            error: 'Internal server error'
         });
     }
 });

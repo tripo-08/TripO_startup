@@ -5,16 +5,32 @@ import { Card } from '../components/Card';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { api } from '../services/api';
+import { twoWheelers } from '../data/twoWheelers'; // Fallback
+import { vehicleData } from '../data/vehicleData';
+import { VehicleSelect } from '../components/VehicleSelect';
+import { getAuth } from 'firebase/auth';
+
 
 export default function VehicleInformation() {
     const navigate = useNavigate();
     const location = useLocation();
     const personalDetails = location.state?.personalDetails;
 
+    const [user, setUser] = useState(null);
+    const [authLoading, setAuthLoading] = useState(true);
+
     useEffect(() => {
-        if (!personalDetails) {
-            navigate('/service-provider-details', { replace: true });
-        }
+        const auth = getAuth();
+        const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+            setUser(currentUser);
+            setAuthLoading(false);
+
+            // Only redirect if NOT authenticated AND no personal details (Registration flow check)
+            if (!currentUser && !personalDetails) {
+                navigate('/service-provider-details', { replace: true });
+            }
+        });
+        return () => unsubscribe();
     }, [personalDetails, navigate]);
 
     const [formData, setFormData] = useState({
@@ -24,7 +40,8 @@ export default function VehicleInformation() {
         numberPlate: '',
         licenseNumber: '',
         licenseIssuedDate: '',
-        licenseImage: ''
+        licenseImage: '',
+        vehicleImage: ''
     });
     const [errors, setErrors] = useState({});
     const [uploading, setUploading] = useState(false);
@@ -74,15 +91,77 @@ export default function VehicleInformation() {
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleSubmit = (e) => {
+    const fourWheelerOptions = vehicleData.four_wheelers?.map(v => ({
+        ...v,
+        name: `${v.brand} ${v.model}`,
+        make: v.brand
+    })) || [];
+
+    const twoWheelerOptions = vehicleData.two_wheelers?.map(v => ({
+        ...v,
+        name: `${v.brand} ${v.model}`,
+        make: v.brand
+    })) || [];
+
+    const handleSubmit = async (e) => {
         e.preventDefault();
         if (validate()) {
-            navigate('/register?role=transport_provider', {
-                state: {
-                    personalDetails,
-                    vehicleDetails: formData
+            if (personalDetails) {
+                // Registration Flow
+                navigate('/register?role=transport_provider', {
+                    state: {
+                        personalDetails,
+                        vehicleDetails: formData
+                    }
+                });
+            } else if (user) {
+                // Add Vehicle Flow for Existing User
+                try {
+                    const auth = getAuth();
+                    const token = await auth.currentUser.getIdToken();
+
+                    // Map form data to backend structure
+                    const seatsMap = {
+                        '2wheeler': 1,
+                        '4wheeler': 4,
+                        'minivan': 7,
+                        'bus': 40,
+                        'truck': 2
+                    };
+
+                    const vehicleData = {
+                        details: {
+                            make: formData.vehicleName.split(' ')[0] || 'Unknown',
+                            model: formData.vehicleName.substring(formData.vehicleName.indexOf(' ') + 1) || formData.vehicleName,
+                            year: new Date().getFullYear(), // Default to current year as it's not in form
+                            color: formData.vehicleColor,
+                            licensePlate: formData.numberPlate,
+                            seats: seatsMap[formData.vehicleType] || 4,
+                            fuelType: 'petrol', // Default
+                            transmission: 'manual' // Default
+                        },
+                        // Include the selected vehicle image as a photo if available
+                        photos: formData.vehicleImage ? [{
+                            url: formData.vehicleImage,
+                            type: 'exterior_front',
+                            verified: false,
+                            uploadedAt: new Date()
+                        }] : []
+                    };
+
+                    const response = await api.post('/vehicles', vehicleData, token);
+
+                    if (response.success) {
+                        // Navigate back or to success page
+                        navigate(-1);
+                    } else {
+                        setErrors(prev => ({ ...prev, submit: response.error?.message || 'Failed to add vehicle' }));
+                    }
+                } catch (error) {
+                    console.error('Error adding vehicle:', error);
+                    setErrors(prev => ({ ...prev, submit: 'Failed to add vehicle. Please try again.' }));
                 }
-            });
+            }
         }
     };
 
@@ -119,15 +198,33 @@ export default function VehicleInformation() {
                             {errors.vehicleType && <p className="mt-2 text-sm text-error font-medium ml-1">{errors.vehicleType}</p>}
                         </div>
 
-                        <Input
-                            label="Vehicle Name / Model"
-                            name="vehicleName"
-                            placeholder="e.g. Maruti Suzuki Swift"
-                            icon={Car}
-                            value={formData.vehicleName}
-                            onChange={handleInputChange}
-                            error={errors.vehicleName}
-                        />
+                        {formData.vehicleType === '2wheeler' || formData.vehicleType === '4wheeler' ? (
+                            <VehicleSelect
+                                label="Vehicle Name / Model"
+                                name="vehicleName"
+                                value={formData.vehicleName}
+                                onChange={(e) => {
+                                    handleInputChange(e);
+                                    // Optionally capture image if available in data
+                                    if (e.target.data?.image) {
+                                        setFormData(prev => ({ ...prev, vehicleImage: e.target.data.image }));
+                                    }
+                                }}
+                                options={formData.vehicleType === '4wheeler' ? fourWheelerOptions : twoWheelerOptions}
+                                placeholder="Select your vehicle"
+                                error={errors.vehicleName}
+                            />
+                        ) : (
+                            <Input
+                                label="Vehicle Name / Model"
+                                name="vehicleName"
+                                placeholder="e.g. Maruti Suzuki Swift"
+                                icon={Car}
+                                value={formData.vehicleName}
+                                onChange={handleInputChange}
+                                error={errors.vehicleName}
+                            />
+                        )}
 
                         <div className="grid grid-cols-2 gap-4">
                             <Input

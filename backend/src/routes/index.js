@@ -5,6 +5,9 @@ const { sendResponse } = require('../middleware');
 const authRoutes = require('./auth');
 const userRoutes = require('./users');
 const rideRoutes = require('./rides');
+const walletRoutes = require('./wallet');
+const payoutRoutes = require('./payouts');
+// const externalVehicleRoutes = require('./externalVehicles'); // Removed per user request
 const vehicleRoutes = require('./vehicles');
 const mapsRoutes = require('./maps');
 const searchRoutes = require('./search');
@@ -57,6 +60,9 @@ function setupRoutes(app) {
         cache: '/api/cache',
         transportProviders: '/api/transport-providers',
         routes: '/api/routes',
+        wallet: '/api/wallet',
+        payouts: '/api/payouts',
+        externalVehicles: '/api/external-vehicles',
       },
     }, 'TripO Backend API is running');
   });
@@ -64,6 +70,9 @@ function setupRoutes(app) {
   // Mount route modules
 
   apiRouter.use('/users', userRoutes);
+  apiRouter.use('/wallet', walletRoutes);
+  apiRouter.use('/payouts', payoutRoutes);
+  // apiRouter.use('/external-vehicles', externalVehicleRoutes); // Removed per user request
   apiRouter.use('/rides', rideRoutes);
   apiRouter.use('/vehicles', vehicleRoutes);
   apiRouter.use('/maps', mapsRoutes);

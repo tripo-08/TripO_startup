@@ -83,6 +83,12 @@ class RideService {
         throw new Error('Vehicle not found or does not belong to you');
       }
 
+      // Relaxed check for startup phase: Only check if vehicle is active
+      if (vehicle.status !== 'active') {
+        throw new Error(`Vehicle cannot be used for rides: Status is ${vehicle.status}`);
+      }
+
+      /* Strict verification disabled for now
       if (!vehicle.canBeUsedForRides()) {
         const reasons = [];
 
@@ -100,6 +106,7 @@ class RideService {
 
         throw new Error(`Vehicle cannot be used for rides: ${reasons.join(', ')}`);
       }
+      */
 
       return vehicle;
     } catch (error) {
@@ -945,22 +952,22 @@ class RideService {
    */
   async createRideFromRoute(driverId, rideData) {
     try {
-      const { 
-        source, 
-        destination, 
-        intermediateStops, 
-        rideDate, 
-        rideTime, 
-        availableSeats, 
-        pricePerSeat, 
-        vehicle, 
-        routeId 
+      const {
+        source,
+        destination,
+        intermediateStops,
+        rideDate,
+        rideTime,
+        availableSeats,
+        pricePerSeat,
+        vehicle,
+        routeId
       } = rideData;
 
       // Validate the predefined route exists and is active
       const { getFirestore } = require('../config/firebase');
       const db = getFirestore();
-      
+
       const routeDoc = await db.collection('routes').doc(routeId).get();
       if (!routeDoc.exists) {
         throw new Error('Predefined route not found');
@@ -1015,9 +1022,9 @@ class RideService {
           routeId: routeId,
           createdFromPredefinedRoute: true,
           originalRoute: {
-            source: routeData_db.source,
-            destination: routeData_db.destination,
-            stops: routeData_db.stops
+            source: routeData_db.source || null,
+            destination: routeData_db.destination || null,
+            stops: routeData_db.stops || []
           }
         },
         status: 'published',

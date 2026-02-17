@@ -62,7 +62,7 @@ async function handleResponse(response) {
     const data = isJson ? await response.json() : await response.text();
 
     if (!response.ok) {
-        const error = (data && data.error && data.error.message) || (data && data.message) || response.statusText;
+        const error = (data && data.error && typeof data.error === 'object' ? data.error.message : data.error) || (data && data.message) || response.statusText;
         throw new Error(error);
     }
     return data;
