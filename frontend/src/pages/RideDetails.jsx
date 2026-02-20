@@ -18,20 +18,36 @@ export default function RideDetails() {
     // Fallback data if no state is passed
     const passedRide = location.state?.ride;
 
+    const getLocationText = (value, fallback) => {
+        if (!value) return fallback;
+        if (typeof value === 'string') return value;
+        if (typeof value === 'object') {
+            return value.name || value.city || fallback;
+        }
+        return fallback;
+    };
+
+    const sourceText = getLocationText(passedRide?.source || passedRide?.origin, 'Mumbai');
+    const destinationText = getLocationText(passedRide?.destination || passedRide?.destination, 'Pune');
+
+    const vehicleMake = passedRide?.vehicle?.make || '';
+    const vehicleModel = passedRide?.vehicle?.model || '';
+    const vehicleName = (vehicleMake || vehicleModel) ? `${vehicleMake} ${vehicleModel}`.trim() : (passedRide?.vehicleModel || 'Swift Dzire or similar');
+
     const ride = {
         id: passedRide?.id || 1,
-        source: passedRide?.source || 'Mumbai',
-        destination: passedRide?.destination || 'Pune',
-        date: passedRide?.date || 'Today',
-        time: passedRide?.time || '6:00 AM',
-        duration: passedRide?.duration || '3h 30m',
+        source: sourceText,
+        destination: destinationText,
+        date: passedRide?.date || passedRide?.departureDate || 'Today',
+        time: passedRide?.time || passedRide?.departureTime || '6:00 AM',
+        duration: passedRide?.duration || passedRide?.route?.estimatedDuration || '3h 30m',
 
         // Vehicle & Driver
-        vehicleName: passedRide?.vehicleModel || 'Swift Dzire or similar',
-        vehicleNumber: passedRide?.vehicleNumber || 'MH 12 AB 1234',
-        vehicleColor: 'White',
-        seatsAvailable: passedRide?.seatsAvailable || 4,
-        amenities: ['AC', '4 Seats'],
+        vehicleName,
+        vehicleNumber: passedRide?.vehicleNumber || passedRide?.vehicle?.number || 'MH 12 AB 1234',
+        vehicleColor: passedRide?.vehicle?.color || 'White',
+        seatsAvailable: passedRide?.seatsAvailable || passedRide?.availableSeats || 4,
+        amenities: passedRide?.vehicle?.amenities?.length ? passedRide.vehicle.amenities : ['AC', '4 Seats'],
 
         driver: {
             name: passedRide?.driver?.name || 'Rajesh Kumar',
@@ -69,7 +85,7 @@ export default function RideDetails() {
 
     const handleBookRide = () => {
         // In a real app, integrate with payment gateway here
-        const confirmed = window.confirm(`Confirm booking for ${ride.currency}${ride.pricePerSeat}?`);
+        const confirmed = window.confirm(`Confirm booking for ${ride.currency}${ride.basePrice}?`);
         if (confirmed) {
             alert('Booking feature coming soon!');
             // navigate('/booking-success'); // Todo: Implement success page
@@ -102,7 +118,7 @@ export default function RideDetails() {
 
                 {/* 1. Route Section */}
                 <div>
-                    <h2 className="text-lg font-bold mb-4">One-way trip to {ride.destination.split(' ')[0]}</h2>
+                    <h2 className="text-lg font-bold mb-4">One-way trip to {(ride.destination || '').split(' ')[0]}</h2>
                     <div className="flex gap-4 relative">
                         {/* Timeline Line */}
                         <div className="absolute left-[7px] top-6 bottom-8 w-0.5 bg-black"></div>
@@ -234,3 +250,4 @@ export default function RideDetails() {
         </div>
     );
 }
+

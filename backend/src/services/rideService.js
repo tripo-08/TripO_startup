@@ -9,6 +9,36 @@ class RideService {
     this.db = null;
   }
 
+  normalizeCoordinates(coords) {
+    if (!coords) return null;
+    // Array format: [lng, lat]
+    if (Array.isArray(coords) && coords.length >= 2) {
+      const lng = Number(coords[0]);
+      const lat = Number(coords[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return { lat, lng };
+      }
+    }
+    // Object format: { lat, lng } or { latitude, longitude }
+    if (typeof coords === 'object') {
+      const lat = Number(coords.lat ?? coords.latitude);
+      const lng = Number(coords.lng ?? coords.lon ?? coords.longitude);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return { lat, lng };
+      }
+    }
+    return null;
+  }
+
+  normalizeLocation(location, fallbackName = '') {
+    if (!location || typeof location !== 'object') {
+      return { city: fallbackName || '', coordinates: null };
+    }
+    const city = location.city || location.name || fallbackName || '';
+    const coordinates = this.normalizeCoordinates(location.coordinates || location);
+    return { city, coordinates };
+  }
+
   /**
    * Get database instance (lazy initialization)
    */
@@ -29,10 +59,15 @@ class RideService {
       // Validate and get vehicle data
       const vehicle = await this.validateVehicleForRide(vehicleId, driverId);
 
+      const origin = this.normalizeLocation(rideData.origin, rideData.origin?.city);
+      const destination = this.normalizeLocation(rideData.destination, rideData.destination?.city);
+
       // Create enhanced ride data with vehicle information
       const enhancedRideData = {
         ...otherRideData,
         driverId,
+        origin,
+        destination,
         vehicle: {
           id: vehicle.id,
           make: vehicle.details.make,
@@ -58,6 +93,19 @@ class RideService {
       // Save ride to Firebase
       const newRideRef = this.getDB().ref('rides').push();
       await newRideRef.set(enhancedRideData);
+
+      // Also save to Firestore for advanced search
+      try {
+        const { getFirestore } = require('../config/firebase');
+        const db = getFirestore();
+        await db.collection('rides').doc(newRideRef.key).set({
+          id: newRideRef.key,
+          ...enhancedRideData,
+          publishedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (fsError) {
+        logger.error('Failed to save ride to Firestore:', fsError);
+      }
 
       // Update vehicle usage statistics
       await this.updateVehicleUsage(vehicle.id, 'ride_created');
@@ -138,13 +186,17 @@ class RideService {
 
       // Get all published rides
       const ridesRef = this.getDB().ref('rides');
-      let query = ridesRef.orderByChild('status').equalTo('published');
+      let query = ridesRef;
+      if (ridesRef && typeof ridesRef.orderByChild === 'function') {
+        query = ridesRef.orderByChild('status').equalTo('published');
+      }
 
       const snapshot = await query.once('value');
       let rides = [];
       let totalCount = 0;
 
-      if (snapshot.exists()) {
+      const snapshotHasData = typeof snapshot.exists === 'function' ? snapshot.exists() : !!snapshot.val?.();
+      if (snapshotHasData) {
         const ridesData = snapshot.val();
         rides = Object.entries(ridesData).map(([id, data]) => ({
           id,
@@ -987,16 +1039,26 @@ class RideService {
       }
 
       // Create ride data structure
+      const origin = this.normalizeLocation(
+        { ...source, city: source?.city || source?.name },
+        source?.name
+      );
+      const normalizedDestination = this.normalizeLocation(
+        { ...destination, city: destination?.city || destination?.name },
+        destination?.name
+      );
+
+      const destinationForRide = { ...normalizedDestination, name: destination?.name };
+
       const enhancedRideData = {
         driverId,
         source: {
           name: source.name,
-          coordinates: source.coordinates || null
+          city: origin.city,
+          coordinates: origin.coordinates
         },
-        destination: {
-          name: destination.name,
-          coordinates: destination.coordinates || null
-        },
+        origin: { ...origin, name: source?.name },
+        destination: destinationForRide,
         intermediateStops: intermediateStops || [],
         departureDate: rideDate,
         departureTime: rideTime,
@@ -1040,6 +1102,19 @@ class RideService {
       // Save ride to Firebase Realtime Database
       const newRideRef = this.getDB().ref('rides').push();
       await newRideRef.set(enhancedRideData);
+
+      // Also save to Firestore for advanced search
+      try {
+        const { getFirestore } = require('../config/firebase');
+        const db = getFirestore();
+        await db.collection('rides').doc(newRideRef.key).set({
+          id: newRideRef.key,
+          ...enhancedRideData,
+          publishedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (fsError) {
+        logger.error('Failed to save ride to Firestore:', fsError);
+      }
 
       // Update vehicle usage statistics
       await this.updateVehicleUsage(vehicleData.id, 'ride_created');

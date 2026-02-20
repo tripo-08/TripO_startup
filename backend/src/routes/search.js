@@ -2,6 +2,7 @@ const express = require('express');
 const { query, validationResult } = require('express-validator');
 const { sendResponse, sendError } = require('../middleware');
 const searchService = require('../services/searchService');
+const rideService = require('../services/rideService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -116,7 +117,34 @@ router.get('/rides', validateAdvancedSearch, async (req, res) => {
       }
     });
 
-    const results = await searchService.searchRides(filters);
+    let results;
+    try {
+      results = await searchService.searchRides(filters);
+    } catch (error) {
+      const isIndexError = error?.code === 9 || (error?.message || '').toLowerCase().includes('requires an index');
+      if (!isIndexError) {
+        throw error;
+      }
+
+      // Fallback to RTDB search to avoid Firestore index dependency in dev
+      const fallbackFilters = {
+        origin: filters.originCity,
+        destination: filters.destinationCity,
+        date: filters.departureDate,
+        passengers: filters.minSeats,
+        maxPrice: filters.maxPrice
+      };
+
+      const fallback = await rideService.searchRides(fallbackFilters);
+      results = {
+        rides: fallback?.rides || [],
+        total: fallback?.rides?.length || 0,
+        filters,
+        timestamp: new Date().toISOString(),
+        alternativeRoutes: null,
+        fallback: true
+      };
+    }
 
     sendResponse(res, 200, results, 'Advanced search completed successfully');
 

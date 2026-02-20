@@ -30,6 +30,10 @@ export default function PassengerHome() {
         date: '',
         time: ''
     });
+    const [fromCoords, setFromCoords] = useState(null);
+    const [toCoords, setToCoords] = useState(null);
+    const [fromSuggestions, setFromSuggestions] = useState([]);
+    const [toSuggestions, setToSuggestions] = useState([]);
 
     const [activeTab, setActiveTab] = useState('recommended'); // 'recommended' | 'all'
     const [allRides, setAllRides] = useState([]);
@@ -65,7 +69,12 @@ export default function PassengerHome() {
         // Switch to "All Rides" tab implicitly when searching
         setActiveTab('all');
         try {
-            const results = await rideService.searchRides(searchParams);
+            const results = await rideService.searchRides({
+                ...searchParams,
+                originCoords: fromCoords,
+                destinationCoords: toCoords,
+                optimizeRoute: Boolean(fromCoords && toCoords)
+            });
             setAllRides(results);
         } catch (error) {
             console.error('Search failed', error);
@@ -74,39 +83,54 @@ export default function PassengerHome() {
         }
     };
 
-    // Static data for Recommended (as requested to keep static)
-    const recommendedRides = [
-        {
-            type: 'Bus',
-            vehicleNumber: 'MH 12 AB 1234',
-            source: 'Pune Swargate',
-            destination: 'Mumbai Dadar',
-            date: '2023-10-25',
-            time: '6:00 AM',
-            duration: '3h 30m',
-            rating: '4.8',
-            seatsAvailable: 12,
-            totalSeats: 40,
-            pricePerSeat: 450,
-            pricePerKm: 2,
-            currency: '₹',
-        },
-        {
-            type: 'Cab',
-            vehicleNumber: 'MH 14 CD 5678',
-            source: 'Pune Airport',
-            destination: 'Pune Station',
-            date: '2023-10-25',
-            time: '09:30 AM',
-            duration: '45m',
-            rating: '4.9',
-            seatsAvailable: 3,
-            totalSeats: 4,
-            pricePerSeat: 350,
-            pricePerKm: 15,
-            currency: '₹',
+    const searchAddress = async (query, setSuggestions) => {
+        if (!query || query.length < 3) {
+            setSuggestions([]);
+            return;
         }
-    ];
+        try {
+            const response = await fetch(`https://api.olamaps.io/places/v1/autocomplete?input=${encodeURIComponent(query)}&api_key=${import.meta.env.VITE_OLA_MAPS_API_KEY}`);
+            const data = await response.json();
+            if (data.status === 'ok') {
+                const results = data.predictions.map(p => ({
+                    name: p.description,
+                    placeId: p.place_id
+                }));
+                setSuggestions(results);
+            } else {
+                setSuggestions([]);
+            }
+        } catch (e) {
+            console.error('Autocomplete error', e);
+            setSuggestions([]);
+        }
+    };
+
+    const handleSelectLocation = async (item, type) => {
+        try {
+            const response = await fetch(`https://api.olamaps.io/places/v1/details?place_id=${item.placeId}&api_key=${import.meta.env.VITE_OLA_MAPS_API_KEY}`);
+            const data = await response.json();
+            if (data.status !== 'ok') return;
+
+            const location = data.result.geometry.location;
+            const coords = { lat: location.lat, lng: location.lng };
+            const addressName = data.result.name || data.result.formatted_address || item.name;
+
+            if (type === 'from') {
+                setSearchParams(prev => ({ ...prev, from: addressName }));
+                setFromCoords(coords);
+                setFromSuggestions([]);
+            } else {
+                setSearchParams(prev => ({ ...prev, to: addressName }));
+                setToCoords(coords);
+                setToSuggestions([]);
+            }
+        } catch (e) {
+            console.error('Place Details error', e);
+        }
+    };
+
+    const recommendedRides = allRides.slice(0, 3);
 
     const getUserName = () => {
         if (user?.displayName) return user.displayName.split(' ')[0];
@@ -261,22 +285,68 @@ export default function PassengerHome() {
                         </div>
                     ) : (
                         <div className="space-y-3 mb-4 animate-fade-in">
-                            <Input
-                                icon={MapPin}
-                                placeholder="From location"
-                                value={searchParams.from}
-                                onChange={(e) => setSearchParams({ ...searchParams, from: e.target.value })}
-                                className="h-10 text-sm"
-                                containerClassName="mb-3"
-                            />
-                            <Input
-                                icon={MapPin}
-                                placeholder="To location"
-                                value={searchParams.to}
-                                onChange={(e) => setSearchParams({ ...searchParams, to: e.target.value })}
-                                className="h-10 text-sm"
-                                containerClassName="mb-3"
-                            />
+                            <div className="relative mb-3">
+                                <div className="relative">
+                                    <input
+                                        className="w-full h-10 bg-[#F1F5F9] border-2 border-transparent rounded-xl px-4 text-sm text-text-dark transition-all duration-200 focus:outline-none focus:bg-white focus:border-primary focus:shadow-[0_0_0_4px_rgba(13,59,120,0.1)] placeholder:text-text-soft/50 pl-12"
+                                        placeholder="From location"
+                                        value={searchParams.from}
+                                        onChange={(e) => {
+                                            setSearchParams({ ...searchParams, from: e.target.value });
+                                            setFromCoords(null);
+                                            searchAddress(e.target.value, setFromSuggestions);
+                                        }}
+                                    />
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-text-soft pointer-events-none">
+                                        <MapPin size={20} />
+                                    </div>
+                                </div>
+                                <div className="mt-1 text-[10px] text-gray-400">Select a suggestion to confirm location.</div>
+                                {fromSuggestions.length > 0 && (
+                                    <div className="absolute z-50 w-full bg-white shadow-xl rounded-xl mt-1 border border-gray-100 max-h-48 overflow-y-auto">
+                                        {fromSuggestions.map((item, idx) => (
+                                            <div
+                                                key={idx}
+                                                onClick={() => handleSelectLocation(item, 'from')}
+                                                className="p-3 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-50 last:border-0"
+                                            >
+                                                {item.name}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="relative mb-3">
+                                <div className="relative">
+                                    <input
+                                        className="w-full h-10 bg-[#F1F5F9] border-2 border-transparent rounded-xl px-4 text-sm text-text-dark transition-all duration-200 focus:outline-none focus:bg-white focus:border-primary focus:shadow-[0_0_0_4px_rgba(13,59,120,0.1)] placeholder:text-text-soft/50 pl-12"
+                                        placeholder="To location"
+                                        value={searchParams.to}
+                                        onChange={(e) => {
+                                            setSearchParams({ ...searchParams, to: e.target.value });
+                                            setToCoords(null);
+                                            searchAddress(e.target.value, setToSuggestions);
+                                        }}
+                                    />
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-text-soft pointer-events-none">
+                                        <MapPin size={20} />
+                                    </div>
+                                </div>
+                                <div className="mt-1 text-[10px] text-gray-400">Select a suggestion to confirm location.</div>
+                                {toSuggestions.length > 0 && (
+                                    <div className="absolute z-50 w-full bg-white shadow-xl rounded-xl mt-1 border border-gray-100 max-h-48 overflow-y-auto">
+                                        {toSuggestions.map((item, idx) => (
+                                            <div
+                                                key={idx}
+                                                onClick={() => handleSelectLocation(item, 'to')}
+                                                className="p-3 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-50 last:border-0"
+                                            >
+                                                {item.name}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <Input
                                     type="date"
@@ -351,6 +421,12 @@ export default function PassengerHome() {
                 <div className="space-y-4">
                     {activeTab === 'recommended' ? (
                         <>
+                            {recommendedRides.length === 0 && (
+                                <div className="text-center py-8 text-gray-500">
+                                    <Car size={48} className="mx-auto text-gray-300 mb-2" />
+                                    <p>No recommended rides yet.</p>
+                                </div>
+                            )}
                             {recommendedRides.map((ride, index) => (
                                 <RideCard key={`rec-${index}`} ride={ride} />
                             ))}
@@ -377,3 +453,4 @@ export default function PassengerHome() {
         </div>
     );
 }
+

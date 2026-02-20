@@ -82,3 +82,27 @@ Stack: TypeError: newRideRef.set is not a function
     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
     at async D:\trip0\TripO_startup\backend\src\routes\rides.js:70:22
 
+[2026-02-20T17:55:26.988Z] Create Ride Error: newRideRef.set is not a function
+Stack: TypeError: newRideRef.set is not a function
+    at RideService.createRideFromRoute (D:\tripo_backups\TripO_startup\backend\src\services\rideService.js:1042:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async D:\tripo_backups\TripO_startup\backend\src\routes\rides.js:111:22
+
+[2026-02-20T18:03:39.533Z] Create Ride Error: newRideRef.set is not a function
+Stack: TypeError: newRideRef.set is not a function
+    at RideService.createRideFromRoute (D:\tripo_backups\TripO_startup\backend\src\services\rideService.js:1042:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async D:\tripo_backups\TripO_startup\backend\src\routes\rides.js:111:22
+
+[2026-02-20T19:05:44.838Z] Create Ride Error: newRideRef.set is not a function
+Stack: TypeError: newRideRef.set is not a function
+    at RideService.createRideFromRoute (D:\tripo_backups\TripO_startup\backend\src\services\rideService.js:1100:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async D:\tripo_backups\TripO_startup\backend\src\routes\rides.js:111:22
+
+[2026-02-20T19:05:56.270Z] Create Ride Error: newRideRef.set is not a function
+Stack: TypeError: newRideRef.set is not a function
+    at RideService.createRideFromRoute (D:\tripo_backups\TripO_startup\backend\src\services\rideService.js:1100:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async D:\tripo_backups\TripO_startup\backend\src\routes\rides.js:111:22
+

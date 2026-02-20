@@ -234,7 +234,8 @@ export default function ScheduleRide() {
 
             if (vehicleList.length > 0) {
                 const defaultVehicle = vehicleList.find(v => v.status === 'active') || vehicleList[0];
-                setSelectedVehicleId(defaultVehicle._id);
+                const defaultId = defaultVehicle.id || defaultVehicle._id;
+                setSelectedVehicleId(defaultId);
                 updateVehicleType(defaultVehicle);
             }
         } catch (error) {
@@ -259,7 +260,7 @@ export default function ScheduleRide() {
     const handleVehicleChange = (e) => {
         const vId = e.target.value;
         setSelectedVehicleId(vId);
-        const vehicle = vehicles.find(v => v._id === vId);
+        const vehicle = vehicles.find(v => (v.id || v._id) === vId);
         updateVehicleType(vehicle);
     };
 
@@ -528,8 +529,22 @@ export default function ScheduleRide() {
     const isBike = vehicleType.includes('bike') || vehicleType.includes('scooter') || vehicleType.includes('motorcycle');
 
     const handleSubmit = async () => {
-        if (!source || !destination || !formData.date || !formData.time || !selectedVehicleId) {
-            alert('Please fill in all required fields');
+        const missingFields = [];
+        if (!source) missingFields.push('Source');
+        if (!destination) missingFields.push('Destination');
+        if (!sourceCoords || !destCoords) missingFields.push('Select locations from suggestions');
+        if (!routes || routes.length === 0) missingFields.push('Route');
+        if (!formData.date) missingFields.push('Date');
+        if (!formData.time) missingFields.push('Time');
+        if (!selectedVehicleId) missingFields.push('Vehicle');
+
+        const seatsValue = Number(formData.seats);
+        const priceValue = Number(formData.priceBySeat);
+        if (!Number.isFinite(seatsValue) || seatsValue <= 0) missingFields.push('Seats');
+        if (!Number.isFinite(priceValue) || priceValue <= 0) missingFields.push('Price per seat');
+
+        if (missingFields.length > 0) {
+            alert(`Please fill in all required fields: ${missingFields.join(', ')}`);
             return;
         }
 
@@ -537,17 +552,14 @@ export default function ScheduleRide() {
         try {
             const token = await authService.getToken();
 
-            // Construct departure timestamp
-            const departureTime = new Date(`${formData.date}T${formData.time}`);
-
             // Prepare payload
             const rideData = {
-                source: {
-                    name: source,
-                    coordinates: [sourceCoords.lon, sourceCoords.lat] // GeoJSON format [lng, lat]
+                origin: {
+                    city: sourceCoords?.city || source,
+                    coordinates: [sourceCoords.lon, sourceCoords.lat]
                 },
                 destination: {
-                    name: destination,
+                    city: destCoords?.city || destination,
                     coordinates: [destCoords.lon, destCoords.lat]
                 },
                 route: routes[selectedRouteIndex] ? {
@@ -556,15 +568,16 @@ export default function ScheduleRide() {
                     duration: routes[selectedRouteIndex].duration
                 } : null,
                 vehicleId: selectedVehicleId,
-                departureTime: departureTime.toISOString(),
-                seats: parseInt(formData.seats),
-                pricePerSeat: parseFloat(formData.priceBySeat),
+                departureDate: formData.date,
+                departureTime: formData.time,
+                totalSeats: seatsValue,
+                pricePerSeat: priceValue,
                 luggageAllowed: formData.luggageAllowed,
-                maxLuggageWeight: formData.luggageAllowed ? parseFloat(formData.luggageCapacity) : 0,
+                maxLuggageWeight: formData.luggageAllowed ? Number(formData.luggageCapacity) : 0,
                 description: formData.description
             };
 
-            const response = await api.post('/rides/create', rideData, token);
+            const response = await api.post('/rides', rideData, token);
 
             if (response.success || response.data) {
                 alert('Ride published successfully!');
@@ -612,10 +625,13 @@ export default function ScheduleRide() {
                                         value={source}
                                         onChange={(e) => {
                                             setSource(e.target.value);
+                                            setSourceCoords(null);
+                                            setRoutes([]);
                                             searchAddress(e.target.value, setSourceSuggestions);
                                         }}
                                         className="w-full pl-10 pr-4 py-3 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
+                                    <div className="mt-1 text-[10px] text-gray-400">Select a suggestion to confirm location.</div>
                                     {sourceSuggestions.length > 0 && (
                                         <div className="absolute z-50 w-full bg-white shadow-xl rounded-b-xl mt-1 border border-gray-100 max-h-48 overflow-y-auto">
                                             {sourceSuggestions.map((item, idx) => (
@@ -636,10 +652,13 @@ export default function ScheduleRide() {
                                         value={destination}
                                         onChange={(e) => {
                                             setDestination(e.target.value);
+                                            setDestCoords(null);
+                                            setRoutes([]);
                                             searchAddress(e.target.value, setDestSuggestions);
                                         }}
                                         className="w-full pl-10 pr-4 py-3 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
+                                    <div className="mt-1 text-[10px] text-gray-400">Select a suggestion to confirm location.</div>
                                     {destSuggestions.length > 0 && (
                                         <div className="absolute z-50 w-full bg-white shadow-xl rounded-b-xl mt-1 border border-gray-100 max-h-48 overflow-y-auto">
                                             {destSuggestions.map((item, idx) => (
