@@ -596,8 +596,8 @@ export default function ScheduleRide() {
                     <div className="flex flex-col h-full">
                         {/* Map Area */}
 
-                        <div className="flex-1 relative bg-gray-200 min-h-[500px] z-0">
-                            <div ref={mapContainerRef} style={{ width: '100%', height: '100%', minHeight: '500px' }} />
+                        <div className="relative bg-gray-200 h-[45vh] max-h-[420px] min-h-[280px] z-0">
+                            <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
                         </div>
 
                         {/* Search & Route Selection Panel */}

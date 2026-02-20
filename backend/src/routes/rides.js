@@ -22,7 +22,8 @@ router.post('/calculate-route', authMiddleware.authenticateToken, [
         const { origin, destination } = req.body;
 
         // Call MapsService which uses the OAuth token
-        const routeData = await mapsService.getRoute(origin, destination);
+        // Request alternative routes so the UI can let the user choose.
+        const routeData = await mapsService.getRoute(origin, destination, [], { alternatives: true });
 
         if (routeData) {
             res.json({
