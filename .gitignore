@@ -44,3 +44,8 @@ Desktop.ini
 mongodb-memory-server/
 backend/node_modules/
 backend/node_modules/.cache/
+
+backend/logs/
+*.log
+backend/auth-debug.log
+
