@@ -71,14 +71,14 @@ const consoleFormat = winston.format.combine(
     (info) => {
       const { timestamp, level, message, requestId, userId, ...meta } = info;
       let logMessage = `${timestamp} ${level}: ${message}`;
-      
+
       if (requestId) logMessage += ` [req:${requestId}]`;
       if (userId) logMessage += ` [user:${userId}]`;
-      
+
       if (Object.keys(meta).length > 0) {
         logMessage += ` ${JSON.stringify(meta)}`;
       }
-      
+
       return logMessage;
     }
   )
@@ -97,52 +97,57 @@ const transports = [
   new winston.transports.Console({
     format: process.env.NODE_ENV === 'production' ? format : consoleFormat,
     level: process.env.NODE_ENV === 'production' ? 'info' : 'debug'
-  }),
-  
-  // File transport for errors
-  new winston.transports.File({
-    filename: path.join(logsDir, 'error.log'),
-    level: 'error',
-    format: format,
-    maxsize: 5242880, // 5MB
-    maxFiles: 5,
-  }),
-  
-  // File transport for all logs
-  new winston.transports.File({
-    filename: path.join(logsDir, 'combined.log'),
-    format: format,
-    maxsize: 5242880, // 5MB
-    maxFiles: 5,
-  }),
-  
-  // Audit logs - separate file for compliance
-  new winston.transports.File({
-    filename: path.join(logsDir, 'audit.log'),
-    level: 'audit',
-    format: format,
-    maxsize: 10485760, // 10MB
-    maxFiles: 10,
-  }),
-  
-  // Security logs - separate file for security events
-  new winston.transports.File({
-    filename: path.join(logsDir, 'security.log'),
-    level: 'security',
-    format: format,
-    maxsize: 10485760, // 10MB
-    maxFiles: 10,
-  }),
-  
-  // Compliance logs - separate file for data access tracking
-  new winston.transports.File({
-    filename: path.join(logsDir, 'compliance.log'),
-    level: 'compliance',
-    format: format,
-    maxsize: 10485760, // 10MB
-    maxFiles: 10,
-  }),
+  })
 ];
+
+// Only add file transports if not disabled (e.g. for testing or local dev conflict avoidance)
+if (process.env.DISABLE_FILE_LOGGING !== 'true') {
+  transports.push(
+    // File transport for errors
+    new winston.transports.File({
+      filename: path.join(logsDir, 'error.log'),
+      level: 'error',
+      format: format,
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+    }),
+
+    // File transport for all logs
+    new winston.transports.File({
+      filename: path.join(logsDir, 'combined.log'),
+      format: format,
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+    }),
+
+    // Audit logs - separate file for compliance
+    new winston.transports.File({
+      filename: path.join(logsDir, 'audit.log'),
+      level: 'audit',
+      format: format,
+      maxsize: 10485760, // 10MB
+      maxFiles: 10,
+    }),
+
+    // Security logs - separate file for security events
+    new winston.transports.File({
+      filename: path.join(logsDir, 'security.log'),
+      level: 'security',
+      format: format,
+      maxsize: 10485760, // 10MB
+      maxFiles: 10,
+    }),
+
+    // Compliance logs - separate file for data access tracking
+    new winston.transports.File({
+      filename: path.join(logsDir, 'compliance.log'),
+      level: 'compliance',
+      format: format,
+      maxsize: 10485760, // 10MB
+      maxFiles: 10,
+    })
+  );
+}
 
 // Create the logger
 const logger = winston.createLogger({
@@ -153,20 +158,20 @@ const logger = winston.createLogger({
 });
 
 // Add custom logging methods
-logger.audit = function(message, meta = {}) {
+logger.audit = function (message, meta = {}) {
   this.log('audit', message, { ...meta, category: 'audit' });
 };
 
-logger.security = function(message, meta = {}) {
+logger.security = function (message, meta = {}) {
   this.log('security', message, { ...meta, category: 'security' });
 };
 
-logger.compliance = function(message, meta = {}) {
+logger.compliance = function (message, meta = {}) {
   this.log('compliance', message, { ...meta, category: 'compliance' });
 };
 
 // Performance logging
-logger.performance = function(operation, duration, meta = {}) {
+logger.performance = function (operation, duration, meta = {}) {
   this.info(`Performance: ${operation} completed in ${duration}ms`, {
     ...meta,
     category: 'performance',
@@ -177,7 +182,7 @@ logger.performance = function(operation, duration, meta = {}) {
 };
 
 // Business metrics logging
-logger.metric = function(metricName, value, tags = {}) {
+logger.metric = function (metricName, value, tags = {}) {
   this.info(`Metric: ${metricName}`, {
     category: 'metric',
     metricName,
@@ -188,7 +193,7 @@ logger.metric = function(metricName, value, tags = {}) {
 };
 
 // Request logging with correlation ID
-logger.request = function(req, res, duration) {
+logger.request = function (req, res, duration) {
   const logData = {
     category: 'request',
     method: req.method,
@@ -210,7 +215,7 @@ logger.request = function(req, res, duration) {
 };
 
 // Error logging with context
-logger.errorWithContext = function(error, context = {}) {
+logger.errorWithContext = function (error, context = {}) {
   this.error(error.message, {
     category: 'error',
     error: {
@@ -224,7 +229,7 @@ logger.errorWithContext = function(error, context = {}) {
 };
 
 // Health check logging
-logger.health = function(component, status, details = {}) {
+logger.health = function (component, status, details = {}) {
   this.info(`Health Check: ${component} - ${status}`, {
     category: 'health',
     component,

@@ -99,11 +99,15 @@ export const authService = {
             throw new Error('Please verify your email address before logging in.');
         }
 
+        const token = await user.getIdToken();
+        localStorage.setItem('token', token);
+
         return user;
     },
 
     async logout() {
         await signOut(auth);
+        localStorage.removeItem('token');
     },
 
     async getUserRole(uid) {
@@ -139,8 +143,10 @@ export const authService = {
 
     async getToken() {
         const user = auth.currentUser;
-        if (!user) return null;
-        return await user.getIdToken();
+        if (!user) return localStorage.getItem('token'); // Fallback to stored token
+        const token = await user.getIdToken();
+        localStorage.setItem('token', token); // Refresh stored token
+        return token;
     },
 
     waitForAuth() {

@@ -59,20 +59,20 @@
         "totalRidesAsPassenger": 0,
         "totalRidesAsDriver": 0,
         "totalEarnings": 0,
-        "memberSince": "2026-02-17T06:39:35.839Z",
-        "lastActiveAt": "2026-02-17T06:42:15.104Z",
+        "memberSince": "2026-02-17T06:34:17.751Z",
+        "lastActiveAt": "2026-02-17T10:24:08.570Z",
         "completionRate": 100,
         "responseTime": 0
       },
-      "updatedAt": "2026-02-17T06:42:15.104Z",
-      "createdAt": "2026-02-17T06:39:35.839Z"
+      "updatedAt": "2026-02-17T10:24:08.570Z",
+      "createdAt": "2026-02-17T06:34:17.751Z"
     }
   },
   "rides": {},
   "bookings": {},
   "verification_tokens": {},
-  "routes": {},
-  "stops": {},
   "vehicles": {},
+  "stops": {},
+  "routes": {},
   "transport_providers": {}
 }

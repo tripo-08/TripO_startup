@@ -7,7 +7,16 @@ const logger = require('../utils/logger');
 router.get('/', async (req, res) => {
     try {
         const db = getFirestore();
+        if (!db) {
+            throw new Error("Firestore not initialized");
+        }
+
         const snapshot = await db.collection('stops').orderBy('name', 'asc').get();
+        if (snapshot.empty) {
+            console.log("No stops found in Firestore.");
+            return res.status(200).json({ success: true, data: [] });
+        }
+
         const stops = [];
 
         snapshot.forEach(doc => {
@@ -27,9 +36,11 @@ router.get('/', async (req, res) => {
 
     } catch (error) {
         logger.error('Error fetching public stops:', error);
+        console.error('Detailed Stops Error:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to fetch stops'
+            error: 'Failed to fetch stops',
+            details: error.message
         });
     }
 });

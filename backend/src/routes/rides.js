@@ -1,8 +1,48 @@
 const express = require('express');
 const { body, validationResult, query } = require('express-validator');
 const rideService = require('../services/rideService');
+const mapsService = require('../utils/maps');
 const authMiddleware = require('../middleware/auth');
 const router = express.Router();
+
+// POST /api/rides/calculate-route - Get route details
+router.post('/calculate-route', authMiddleware.authenticateToken, [
+    body('origin').isObject().withMessage('Origin coordinates required'),
+    body('destination').isObject().withMessage('Destination coordinates required')
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                errors: errors.array()
+            });
+        }
+
+        const { origin, destination } = req.body;
+
+        // Call MapsService which uses the OAuth token
+        const routeData = await mapsService.getRoute(origin, destination);
+
+        if (routeData) {
+            res.json({
+                success: true,
+                data: routeData
+            });
+        } else {
+            res.status(404).json({
+                success: false,
+                error: 'No route found'
+            });
+        }
+    } catch (error) {
+        console.error('Error calculating route:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+});
 
 // GET /api/rides - Search rides with filters including vehicle-based filters
 router.get('/', [
@@ -95,10 +135,11 @@ router.post('/create-from-route', authMiddleware.authenticateToken, authMiddlewa
             fs.appendFileSync(logPath, `[${new Date().toISOString()}] Create Ride Error: ${error.message}\nStack: ${error.stack}\n\n`);
         } catch (e) { console.error('Failed to write log', e); }
 
+        const isDev = process.env.NODE_ENV === 'development';
         res.status(500).json({
             success: false,
-            error: `Internal server error: ${error.message}`,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            error: isDev ? `Internal server error: ${error.message}` : 'Internal server error',
+            stack: isDev ? error.stack : undefined
         });
     }
 });

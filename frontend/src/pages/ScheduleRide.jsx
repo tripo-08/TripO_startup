@@ -1,32 +1,171 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GoogleMap, useJsApiLoader, Marker, Polyline } from '@react-google-maps/api';
 import { ArrowLeft, MapPin, Navigation, Calendar, Clock, Briefcase, Users } from 'lucide-react';
 import { authService } from '../services/auth';
 import { api } from '../services/api';
-
-const libraries = ['places'];
+import polyline from '@mapbox/polyline';
+// Ola Maps script is loaded in index.html, so we access via window.OlaMaps
 
 export default function ScheduleRide() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [step, setStep] = useState(1); // 1: Route, 2: Details
 
-    // Google Maps Loader
-    const { isLoaded } = useJsApiLoader({
-        id: 'google-map-script',
-        googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-        libraries
-    });
+    const mapContainerRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+    const olaMapsRef = useRef(null);
+    const markersRef = useRef([]);
+    const polylineRef = useRef(null);
 
-    const mapRef = useRef(null);
+    const ensureMissingStyleImage = (map, id) => {
+        try {
+            if (!id || map.hasImage(id)) return;
+            const transparentPixel = new Uint8Array([0, 0, 0, 0]);
+            map.addImage(id, {
+                width: 1,
+                height: 1,
+                data: transparentPixel
+            });
+        } catch (e) {
+            console.warn('Unable to provide fallback style image:', id, e);
+        }
+    };
 
-    const onLoad = useCallback(function callback(map) {
-        mapRef.current = map;
-    }, []);
+    const getEncodedPolyline = (value) => {
+        if (!value) return null;
+        if (typeof value === 'string') return value;
+        if (typeof value === 'object') {
+            return value.points || value.encodedPolyline || value.encoded_polyline || value.geometry || null;
+        }
+        return null;
+    };
 
-    const onUnmount = useCallback(function callback(map) {
-        mapRef.current = null;
+    const extractRouteCoordinates = (route) => {
+        const encoded = getEncodedPolyline(route?.polyline)
+            || getEncodedPolyline(route?.geometry)
+            || getEncodedPolyline(route?.overview_polyline)
+            || getEncodedPolyline(route?.overviewPolyline)
+            || getEncodedPolyline(route?.route_geometry);
+        if (typeof encoded === 'string' && encoded.length > 0) {
+            try {
+                const decodedPoints = polyline.decode(encoded);
+                return {
+                    encodedPolyline: encoded,
+                    coordinates: decodedPoints.map(point => [point[1], point[0]]) // [lat,lng] -> [lng,lat]
+                };
+            } catch (e) {
+                console.warn('Failed to decode route polyline, trying coordinate geometry fallback', e);
+            }
+        }
+
+        const directCoords = route?.geometry?.coordinates || route?.coordinates;
+        if (Array.isArray(directCoords) && directCoords.length > 1) {
+            // Normalize to [lng, lat]
+            const normalized = directCoords.map((coord) => {
+                if (!Array.isArray(coord) || coord.length < 2) return coord;
+                const [a, b] = coord;
+                // Heuristic: lat range is [-90,90], lng range is [-180,180]
+                if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
+                    return [b, a]; // looks like [lat,lng]
+                }
+                return [a, b]; // assume already [lng,lat]
+            });
+
+            return {
+                encodedPolyline: null,
+                coordinates: normalized
+            };
+        }
+
+        const stepCoords = [];
+        const steps = Array.isArray(route?.steps) ? route.steps : [];
+        steps.forEach((step) => {
+            const stepEncoded = getEncodedPolyline(step?.polyline)
+                || getEncodedPolyline(step?.geometry)
+                || getEncodedPolyline(step?.overview_polyline)
+                || getEncodedPolyline(step?.overviewPolyline);
+            if (typeof stepEncoded === 'string' && stepEncoded.length > 0) {
+                try {
+                    const decoded = polyline.decode(stepEncoded).map((point) => [point[1], point[0]]);
+                    if (decoded.length > 0) {
+                        if (stepCoords.length > 0) {
+                            // Avoid duplicating the connection vertex between steps
+                            stepCoords.push(...decoded.slice(1));
+                        } else {
+                            stepCoords.push(...decoded);
+                        }
+                    }
+                    return;
+                } catch (e) {
+                    // Ignore malformed step polyline and try next step
+                }
+            }
+        });
+
+        if (stepCoords.length > 1) {
+            return {
+                encodedPolyline: null,
+                coordinates: stepCoords
+            };
+        }
+
+        return null;
+    };
+
+    const normalizeMapCoordinates = (coords) => {
+        if (!Array.isArray(coords)) return [];
+        return coords
+            .map((coord) => {
+                if (!Array.isArray(coord) || coord.length < 2) return null;
+                const lng = Number(coord[0]);
+                const lat = Number(coord[1]);
+                if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+                if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+                return [lng, lat];
+            })
+            .filter(Boolean);
+    };
+
+    // Initialize Map with Retry
+    useEffect(() => {
+        const initMap = () => {
+            if (!mapContainerRef.current) return;
+
+            const OlaMaps = window.OlaMaps;
+            if (!OlaMaps) {
+                // Retry after 500ms if SDK not loaded yet
+                setTimeout(initMap, 500);
+                return;
+            }
+
+            if (mapInstanceRef.current) return; // Already initialized
+
+            try {
+                olaMapsRef.current = new OlaMaps({
+                    apiKey: import.meta.env.VITE_OLA_MAPS_API_KEY
+                });
+
+                const myMap = olaMapsRef.current.init({
+                    container: mapContainerRef.current,
+                    center: [73.8567, 18.5204], // [lng, lat] - Pune default
+                    zoom: 12
+                });
+
+                myMap.on('styleimagemissing', (e) => {
+                    ensureMissingStyleImage(myMap, e?.id);
+                });
+
+                mapInstanceRef.current = myMap;
+            } catch (error) {
+                console.error("Error initializing Ola Maps:", error);
+            }
+        };
+
+        initMap();
+
+        return () => {
+            // Cleanup in SPA not strictly required by SDK, but good practice
+        };
     }, []);
 
     // User/Provider Data
@@ -130,190 +269,314 @@ export default function ScheduleRide() {
     useEffect(() => {
         const loadStops = async () => {
             try {
+                // Wait for auth to ensure token is available if needed (though stops is public, it's safer)
+                // Actually stops is public, but let's debug the 500 error.
+                // If it's a 500, it's backend.
                 const response = await api.get('/stops');
-                const stopList = Array.isArray(response) ? response : (response.data || []);
-                setAdminStops(stopList);
+                const stopList = Array.isArray(response) && response.length > 0 ? response : (response.data || []);
+                setAdminStops(Array.isArray(stopList) ? stopList : []);
             } catch (err) {
                 console.error("Failed to load admin stops", err);
+                setAdminStops([]);
             }
         };
         loadStops();
     }, []);
 
-    // Filter Admin Stops
-    const searchAddress = (query, setSuggestions) => {
+    // Enhanced Search with Ola Maps
+    const searchAddress = async (query, setSuggestions) => {
         if (!query) {
             setSuggestions([]);
             return;
         }
+
         const lowerQuery = query.toLowerCase();
-        const filtered = adminStops.filter(stop =>
+        // Local Admin Stops Search
+        const localResults = adminStops.filter(stop =>
             stop.name.toLowerCase().includes(lowerQuery)
-        );
-        setSuggestions(filtered);
+        ).map(stop => ({ ...stop, type: 'stop' }));
+
+        // Ola Maps Autocomplete
+        if (query.length > 2) {
+            try {
+                const response = await fetch(`https://api.olamaps.io/places/v1/autocomplete?input=${encodeURIComponent(query)}&api_key=${import.meta.env.VITE_OLA_MAPS_API_KEY}`);
+                const data = await response.json();
+
+                if (data.status === 'ok') {
+                    const apiResults = data.predictions.map(p => ({
+                        name: p.description,
+                        placeId: p.place_id,
+                        type: 'api'
+                    }));
+                    setSuggestions([...localResults, ...apiResults]);
+                } else {
+                    setSuggestions(localResults);
+                }
+            } catch (e) {
+                console.error("Autocomplete error", e);
+                setSuggestions(localResults);
+            }
+        } else {
+            setSuggestions(localResults);
+        }
     };
 
-    const handleSelectLocation = (item, type) => {
-        const coords = { lat: parseFloat(item.lat), lon: parseFloat(item.lng) };
+    const handleSelectLocation = async (item, type) => {
+        let coords = { lat: 0, lon: 0 };
+        let addressName = item.name;
+
+        if (item.type === 'api') {
+            // Fetch Place Details to get Lat/Lng
+            try {
+                const response = await fetch(`https://api.olamaps.io/places/v1/details?place_id=${item.placeId}&api_key=${import.meta.env.VITE_OLA_MAPS_API_KEY}`);
+                const data = await response.json();
+
+                if (data.status === 'ok') {
+                    const location = data.result.geometry.location;
+                    coords = { lat: location.lat, lon: location.lng };
+                    addressName = data.result.name || data.result.formatted_address || item.name;
+                }
+            } catch (e) {
+                console.error("Place Details error", e);
+                return;
+            }
+        } else {
+            // Admin Stop
+            coords = { lat: parseFloat(item.lat), lon: parseFloat(item.lng) };
+        }
 
         const locationData = {
-            address: item.name,
-            city: item.name,
+            address: addressName,
+            city: addressName.split(',')[0], // Simple city extraction
             ...coords
         };
 
         if (type === 'source') {
-            setSource(item.name);
+            setSource(addressName);
             setSourceCoords(locationData);
             setSourceSuggestions([]);
         } else {
-            setDestination(item.name);
+            setDestination(addressName);
             setDestCoords(locationData);
             setDestSuggestions([]);
         }
     };
 
-    const processGoogleRoute = (route) => {
-        const leg = route.legs[0];
+    // Routing Logic
+    const fetchRoutes = async () => {
+        if (!source || !destination || !sourceCoords || !destCoords) return;
 
-        // Extract basic info
-        const distance = leg.distance.value; // meters
-        const duration = leg.duration.value; // seconds
-        const viaName = route.summary;
+        try {
+            // Call Backend Proxy for Route (Uses Ola Maps Directions API)
+            const response = await api.post('/rides/calculate-route', {
+                origin: { lat: sourceCoords.lat, lng: sourceCoords.lon },
+                destination: { lat: destCoords.lat, lng: destCoords.lon }
+            });
 
-        // Extract Stops
-        // Google steps are navigation instructions. We can try to extract "Major" turns?
-        // For now, let's keep it simple and just show Start/End in the timeline unless we parse complex steps
-        const usefulStops = [];
+            const success = response?.success ?? response?.data?.success;
+            const routeData = response?.data?.routes ? response.data : response?.data?.data;
+            const apiRoutes = routeData?.routes || [];
 
-        usefulStops.push({
-            name: leg.start_address.split(',')[0],
-            timeOffset: 0,
-            distance: 0
-        });
+            if (success && apiRoutes.length > 0) {
 
-        // Simplified stop logic for Google Maps
-        // We could iterate `leg.steps` but they are very granular "Turn right onto X"
-        // Let's just add the destination for now, or maybe only very long steps?
+                // Map Routes and Decode/Normalize Polylines
+                const formattedRoutes = apiRoutes.map((route) => {
+                    const extracted = extractRouteCoordinates(route);
+                    if (!extracted || !Array.isArray(extracted.coordinates) || extracted.coordinates.length < 2) {
+                        return null;
+                    }
 
-        usefulStops.push({
-            name: leg.end_address.split(',')[0],
-            timeOffset: duration,
-            distance: distance
-        });
+                    return {
+                        distance: route?.distance?.value ?? route?.distance ?? 0, // meters
+                        duration: route?.duration?.value ?? route?.duration ?? 0, // seconds
+                        polyline: extracted.encodedPolyline || route?.polyline || null,
+                        geometry: {
+                            type: 'LineString',
+                            coordinates: extracted.coordinates
+                        },
+                        bounds: route?.bounds,
+                        via: { name: route?.summary || route?.via?.name || '' }
+                    };
+                }).filter(Boolean);
 
-        return {
-            ...route,
-            distance, // Normalized prop name
-            duration, // Normalized prop name
-            via: { name: viaName },
-            stops: usefulStops,
-            // Decode overview_poly for rendering if not already available in a friendly format
-            // route.overview_path is available in the object returned by JS API
-            path: route.overview_path
-        };
+                if (formattedRoutes.length > 0) {
+                    setRoutes(formattedRoutes);
+                    setSelectedRouteIndex(0);
+                } else {
+                    console.error("Routing API returned routes but none had valid geometry.");
+                    alert("Routes were found but geometry could not be parsed. Please try different locations.");
+                    setRoutes([]);
+                }
+            } else {
+                console.error("Routing API returned no routes.");
+                alert("Could not find a route between these locations. Please check the locations.");
+                setRoutes([]); // Clear routes
+            }
+        } catch (error) {
+            console.error("Error fetching routes:", error);
+            alert("Failed to calculate route. Please try again.");
+            setRoutes([]); // Clear routes
+        }
     };
 
-    // Routing (Google)
     useEffect(() => {
-        if (isLoaded && sourceCoords && destCoords) {
-            const directionsService = new window.google.maps.DirectionsService();
-
-            directionsService.route({
-                origin: { lat: sourceCoords.lat, lng: sourceCoords.lon },
-                destination: { lat: destCoords.lat, lng: destCoords.lon },
-                travelMode: window.google.maps.TravelMode.DRIVING,
-                provideRouteAlternatives: true
-            }, (result, status) => {
-                if (status === window.google.maps.DirectionsStatus.OK) {
-                    const processed = result.routes.map(processGoogleRoute);
-                    setRoutes(processed);
-                    setSelectedRouteIndex(0);
-
-                    // Fit bounds
-                    if (mapRef.current && result.routes[0] && result.routes[0].bounds) {
-                        mapRef.current.fitBounds(result.routes[0].bounds);
-                    }
-                } else {
-                    console.error(`error fetching directions ${status}`);
-                    alert("Failed to fetch routes. Please verify location coordinates.");
-                }
-            });
+        if (sourceCoords && destCoords) {
+            fetchRoutes();
         }
-    }, [isLoaded, sourceCoords, destCoords]);
+    }, [sourceCoords, destCoords]);
 
+    // Render Route on Map
+    useEffect(() => {
+        if (!mapInstanceRef.current || routes.length === 0) {
+            // If no routes, ensure we clear the layer if it exists
+            if (mapInstanceRef.current && mapInstanceRef.current.getSource('route-source')) {
+                mapInstanceRef.current.getSource('route-source').setData({
+                    type: 'Feature',
+                    properties: {},
+                    geometry: { type: 'LineString', coordinates: [] }
+                });
+            }
+            if (markersRef.current) {
+                markersRef.current.forEach(marker => marker.remove());
+                markersRef.current = [];
+            }
+            return;
+        }
+
+        const route = routes[selectedRouteIndex];
+        const map = mapInstanceRef.current;
+        const coordinates = normalizeMapCoordinates(route?.geometry?.coordinates);
+        if (coordinates.length < 2) {
+            console.warn('Route selected but has insufficient valid coordinates for map render.', route);
+            return;
+        }
+
+        const routeSourceId = 'route-source';
+        const routeLayerId = 'route-layer';
+
+        const drawRoute = () => {
+            try {
+                // Add Markers
+                if (markersRef.current) {
+                    markersRef.current.forEach(marker => marker.remove());
+                    markersRef.current = [];
+                }
+                if (sourceCoords) {
+                    const sourceMarker = new window.OlaMaps.Marker({ color: 'blue' })
+                        .setLngLat([sourceCoords.lon, sourceCoords.lat])
+                        .addTo(map);
+                    markersRef.current.push(sourceMarker);
+                }
+                if (destCoords) {
+                    const destMarker = new window.OlaMaps.Marker({ color: 'red' })
+                        .setLngLat([destCoords.lon, destCoords.lat])
+                        .addTo(map);
+                    markersRef.current.push(destMarker);
+                }
+
+                const featureData = {
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: coordinates
+                    }
+                };
+
+                if (map.getSource(routeSourceId)) {
+                    map.getSource(routeSourceId).setData(featureData);
+                } else {
+                    map.addSource(routeSourceId, {
+                        type: 'geojson',
+                        data: featureData
+                    });
+                }
+
+                if (!map.getLayer(routeLayerId)) {
+                    map.addLayer({
+                        id: routeLayerId,
+                        type: 'line',
+                        source: routeSourceId,
+                        layout: {
+                            'line-join': 'round',
+                            'line-cap': 'round'
+                        },
+                        paint: {
+                            'line-color': '#2563EB',
+                            'line-width': 6
+                        }
+                    });
+                }
+
+                const bounds = new window.OlaMaps.LngLatBounds();
+                coordinates.forEach(coord => bounds.extend(coord));
+                map.fitBounds(bounds, { padding: 50 });
+            } catch (e) {
+                console.error('Failed to draw route on map:', e);
+            }
+        };
+
+        if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) {
+            map.once('load', drawRoute);
+            return;
+        }
+
+        drawRoute();
+
+    }, [routes, selectedRouteIndex, sourceCoords, destCoords]);
+
+    const isBike = vehicleType.includes('bike') || vehicleType.includes('scooter') || vehicleType.includes('motorcycle');
 
     const handleSubmit = async () => {
         if (!source || !destination || !formData.date || !formData.time || !selectedVehicleId) {
-            alert("Please fill in all required fields");
+            alert('Please fill in all required fields');
             return;
         }
 
         setLoading(true);
         try {
-            const currentRoute = routes[selectedRouteIndex];
+            const token = await authService.getToken();
 
-            // Encode geometry for backend if needed. 
-            // OSRM sent a GeoJSON or Polyline string. 
-            // Google gives an array of LatLngs in overview_path.
-            // We should probably convert this to GeoJSON LineString format for consistency with backend expectation
-            // if the backend uses it for spatial queries or display.
-            const coordinates = currentRoute.path.map(p => [p.lng(), p.lat()]); // GeoJSON is [lng, lat]
+            // Construct departure timestamp
+            const departureTime = new Date(`${formData.date}T${formData.time}`);
 
-            const payload = {
-                origin: {
-                    address: source,
-                    city: sourceCoords.city,
-                    lat: sourceCoords.lat,
-                    lng: sourceCoords.lon
+            // Prepare payload
+            const rideData = {
+                source: {
+                    name: source,
+                    coordinates: [sourceCoords.lon, sourceCoords.lat] // GeoJSON format [lng, lat]
                 },
                 destination: {
-                    address: destination,
-                    city: destCoords.city,
-                    lat: destCoords.lat,
-                    lng: destCoords.lon
+                    name: destination,
+                    coordinates: [destCoords.lon, destCoords.lat]
                 },
+                route: routes[selectedRouteIndex] ? {
+                    polyline: routes[selectedRouteIndex].polyline,
+                    distance: routes[selectedRouteIndex].distance,
+                    duration: routes[selectedRouteIndex].duration
+                } : null,
                 vehicleId: selectedVehicleId,
-                departureDate: formData.date,
-                departureTime: formData.time,
-                totalSeats: parseInt(formData.seats),
+                departureTime: departureTime.toISOString(),
+                seats: parseInt(formData.seats),
                 pricePerSeat: parseFloat(formData.priceBySeat),
-                preferences: {
-                    luggageAllowed: formData.luggageAllowed,
-                    luggageCapacity: parseInt(formData.luggageCapacity),
-                    description: formData.description
-                },
-                route: {
-                    distance: currentRoute.distance,
-                    duration: currentRoute.duration,
-                    geometry: {
-                        type: 'LineString',
-                        coordinates: coordinates
-                    }
-                }
+                luggageAllowed: formData.luggageAllowed,
+                maxLuggageWeight: formData.luggageAllowed ? parseFloat(formData.luggageCapacity) : 0,
+                description: formData.description
             };
 
-            const token = await authService.getToken();
-            await api.post('/rides', payload, token);
-            alert("Ride Scheduled Successfully!");
-            navigate('/provider-home');
-        } catch (error) {
-            console.error("Failed to schedule ride:", error);
-            const errorMessage = error.response?.data?.error || error.message || "Failed to schedule ride.";
+            const response = await api.post('/rides/create', rideData, token);
 
-            if (errorMessage.includes('Vehicle not found')) {
-                alert("Selected vehicle is invalid or not verified.");
-            } else {
-                alert(errorMessage);
+            if (response.success || response.data) {
+                alert('Ride published successfully!');
+                navigate('/provider/dashboard'); // Redirect to dashboard
             }
+        } catch (error) {
+            console.error('Error publishing ride:', error);
+            alert('Failed to publish ride. Please try again.');
         } finally {
             setLoading(false);
         }
     };
-
-    const isBike = vehicleType.includes('bike') || vehicleType.includes('scooter') || vehicleType.includes('motorcycle');
-
-    if (!isLoaded) return <div className="flex justify-center items-center h-screen">Loading Maps...</div>;
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -332,49 +595,9 @@ export default function ScheduleRide() {
                 {step === 1 ? (
                     <div className="flex flex-col h-full">
                         {/* Map Area */}
+
                         <div className="flex-1 relative bg-gray-200 min-h-[500px] z-0">
-                            <GoogleMap
-                                mapContainerStyle={{ width: '100%', height: '100%', minHeight: '500px' }}
-                                center={{ lat: 18.5204, lng: 73.8567 }}
-                                zoom={10}
-                                onLoad={onLoad}
-                                onUnmount={onUnmount}
-                                options={{
-                                    mapTypeControl: false,
-                                    streetViewControl: false,
-                                    fullscreenControl: false
-                                }}
-                            >
-                                {sourceCoords && <Marker position={{ lat: sourceCoords.lat, lng: sourceCoords.lon }} />}
-                                {destCoords && <Marker position={{ lat: destCoords.lat, lng: destCoords.lon }} />}
-
-                                {adminStops.map(stop => (
-                                    <Marker
-                                        key={stop.id}
-                                        position={{ lat: parseFloat(stop.lat), lng: parseFloat(stop.lng) }}
-                                        opacity={0.6}
-                                        title={stop.name}
-                                    />
-                                ))}
-
-                                {routes.map((route, idx) => {
-                                    const isSelected = selectedRouteIndex === idx;
-                                    return (
-                                        <Polyline
-                                            key={idx}
-                                            path={route.path}
-                                            options={{
-                                                strokeColor: isSelected ? "#2563EB" : "#9CA3AF",
-                                                strokeWeight: isSelected ? 6 : 4,
-                                                strokeOpacity: isSelected ? 1 : 0.6,
-                                                zIndex: isSelected ? 100 : 1,
-                                                clickable: true
-                                            }}
-                                            onClick={() => setSelectedRouteIndex(idx)}
-                                        />
-                                    );
-                                })}
-                            </GoogleMap>
+                            <div ref={mapContainerRef} style={{ width: '100%', height: '100%', minHeight: '500px' }} />
                         </div>
 
                         {/* Search & Route Selection Panel */}

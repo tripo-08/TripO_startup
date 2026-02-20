@@ -19,7 +19,7 @@ function enhancedSecurityHeaders() {
         ],
         scriptSrc: [
           "'self'",
-          "https://maps.googleapis.com",
+          "https://api.olamaps.io",
           "https://checkout.razorpay.com",
           "https://js.stripe.com",
           "https://www.google.com/recaptcha/",
@@ -40,8 +40,7 @@ function enhancedSecurityHeaders() {
           "'self'",
           "https://api.razorpay.com",
           "https://api.stripe.com",
-          "https://maps.googleapis.com",
-          "https://router.project-osrm.org",
+          "https://api.olamaps.io",
           "https://nominatim.openstreetmap.org",
           "wss://localhost:*", // WebSocket connections
           "ws://localhost:*"

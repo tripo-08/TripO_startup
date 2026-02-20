@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 import { Trash2, Plus, Search } from 'lucide-react';
 
-const libraries = ['places'];
+// Ola Maps via window.OlaMaps
 
 const StopsManagement = () => {
     const [stops, setStops] = useState([]);
@@ -10,26 +9,41 @@ const StopsManagement = () => {
     const [newStop, setNewStop] = useState({ name: '', lat: '', lng: '' });
     const [submitting, setSubmitting] = useState(false);
     const [searching, setSearching] = useState(false);
-    const [mapCenter, setMapCenter] = useState({ lat: 16.0, lng: 73.5 }); // Default
+    const [mapCenter, setMapCenter] = useState([73.5, 16.0]); // [lng, lat]
     const [error, setError] = useState('');
 
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-    // Google Maps Loader
-    const { isLoaded } = useJsApiLoader({
-        id: 'google-map-script-admin',
-        googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-        libraries
-    });
+    const mapContainerRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+    const olaMapsRef = useRef(null);
+    const markersRef = useRef([]);
+    const newStopMarkerRef = useRef(null);
 
-    const mapRef = useRef(null);
+    // Initialize Map
+    useEffect(() => {
+        if (!mapInstanceRef.current && mapContainerRef.current) {
+            const OlaMaps = window.OlaMaps;
+            if (!OlaMaps) {
+                console.error("Ola Maps SDK not loaded");
+                return;
+            }
 
-    const onLoad = useCallback(function callback(map) {
-        mapRef.current = map;
-    }, []);
+            olaMapsRef.current = new OlaMaps({
+                apiKey: import.meta.env.VITE_OLA_MAPS_API_KEY
+            });
 
-    const onUnmount = useCallback(function callback(map) {
-        mapRef.current = null;
+            const myMap = olaMapsRef.current.init({
+                style: "https://api.olamaps.io/tiles/vector/v1/styles/default-light-standard/style.json",
+                container: mapContainerRef.current,
+                center: mapCenter,
+                zoom: 9
+            });
+
+            mapInstanceRef.current = myMap;
+
+            myMap.on('click', handleMapClick);
+        }
     }, []);
 
     const fetchStops = async () => {
@@ -106,31 +120,31 @@ const StopsManagement = () => {
         setSearching(true);
         setError('');
 
-        if (!isLoaded) return;
-
         try {
-            const geocoder = new window.google.maps.Geocoder();
-            geocoder.geocode({ address: newStop.name }, (results, status) => {
-                if (status === 'OK' && results[0]) {
-                    const location = results[0].geometry.location;
-                    const lat = location.lat();
-                    const lng = location.lng();
+            // Geocode using Ola Maps API
+            const response = await fetch(`https://api.olamaps.io/places/v1/geocode?address=${encodeURIComponent(newStop.name)}&api_key=${import.meta.env.VITE_OLA_MAPS_API_KEY}`);
+            const data = await response.json();
 
-                    setNewStop(prev => ({
-                        ...prev,
-                        lat: lat.toFixed(6),
-                        lng: lng.toFixed(6)
-                    }));
-                    setMapCenter({ lat, lng });
-                    if (mapRef.current) {
-                        mapRef.current.panTo({ lat, lng });
-                        mapRef.current.setZoom(14);
-                    }
-                } else {
-                    setError('Location not found. Please try specific coords or click map.');
+            if (data.status === 'ok' && data.geocodingResults && data.geocodingResults.length > 0) {
+                const result = data.geocodingResults[0];
+                const location = result.geometry.location;
+                const lat = location.lat;
+                const lng = location.lng;
+
+                setNewStop(prev => ({
+                    ...prev,
+                    lat: lat.toFixed(6),
+                    lng: lng.toFixed(6)
+                }));
+                // setMapCenter([lng, lat]); // Ola uses [lng, lat]
+                if (mapInstanceRef.current) {
+                    mapInstanceRef.current.flyTo({ center: [lng, lat], zoom: 14 });
                 }
-                setSearching(false);
-            });
+                updateNewStopMarker(lat, lng);
+            } else {
+                setError('Location not found. Please try specific coords or click map.');
+            }
+            setSearching(false);
         } catch (err) {
             console.error("Geocoding error:", err);
             setError('Error searching location.');
@@ -139,16 +153,47 @@ const StopsManagement = () => {
     };
 
     const handleMapClick = (e) => {
-        const lat = e.latLng.lat();
-        const lng = e.latLng.lng();
+        // Ola Maps SDK event gives lngLat
+        const { lng, lat } = e.lngLat;
         setNewStop(prev => ({
             ...prev,
             lat: lat.toFixed(6),
             lng: lng.toFixed(6)
         }));
+        updateNewStopMarker(lat, lng);
     };
 
-    if (!isLoaded) return <div className="p-10 text-white">Loading Maps...</div>;
+    const updateNewStopMarker = (lat, lng) => {
+        if (!mapInstanceRef.current || !olaMapsRef.current) return;
+
+        if (newStopMarkerRef.current) {
+            newStopMarkerRef.current.setLngLat([lng, lat]);
+        } else {
+            newStopMarkerRef.current = olaMapsRef.current.addMarker({ offset: [0, -10], anchor: 'bottom', color: 'red' })
+                .setLngLat([lng, lat])
+                .addTo(mapInstanceRef.current);
+        }
+    };
+
+    // Update existing stop markers
+    useEffect(() => {
+        if (!mapInstanceRef.current || !olaMapsRef.current || loading) return;
+
+        // Clear existing markers
+        markersRef.current.forEach(marker => marker.remove());
+        markersRef.current = [];
+
+        stops.forEach(stop => {
+            const marker = olaMapsRef.current.addMarker({ offset: [0, -10], anchor: 'bottom', color: 'blue' })
+                .setLngLat([parseFloat(stop.lng), parseFloat(stop.lat)])
+                .setPopup(new olaMapsRef.current.Popup({ offset: [0, -10] }).setHTML(stop.name))
+                .addTo(mapInstanceRef.current);
+            markersRef.current.push(marker);
+        });
+
+    }, [stops, loading]);
+
+
 
     return (
         <div className="flex flex-col lg:flex-row h-[calc(100vh-100px)] gap-6">
@@ -262,36 +307,7 @@ const StopsManagement = () => {
 
             {/* Right Panel: Map */}
             <div className="w-full lg:w-2/3 bg-gray-800 rounded-lg border border-gray-700 shadow-lg overflow-hidden relative">
-                <GoogleMap
-                    mapContainerStyle={{ width: '100%', height: '100%' }}
-                    center={mapCenter}
-                    zoom={9}
-                    onLoad={onLoad}
-                    onUnmount={onUnmount}
-                    onClick={handleMapClick}
-                    options={{
-                        streetViewControl: false,
-                        mapTypeControl: false
-                    }}
-                >
-                    {/* Existing Stops Markers */}
-                    {stops.map(stop => (
-                        <Marker
-                            key={stop.id}
-                            position={{ lat: parseFloat(stop.lat), lng: parseFloat(stop.lng) }}
-                            title={stop.name}
-                        />
-                    ))}
-
-                    {/* Pending New Stop Marker (Preview) */}
-                    {newStop.lat && newStop.lng && (
-                        <Marker
-                            position={{ lat: parseFloat(newStop.lat), lng: parseFloat(newStop.lng) }}
-                            opacity={0.6}
-                            title="New Stop Location"
-                        />
-                    )}
-                </GoogleMap>
+                <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
 
                 {/* Overlay Instruction */}
                 <div className="absolute top-4 right-4 bg-white/90 text-gray-800 px-3 py-1 rounded shadow text-xs font-semibold z-[1000]">
