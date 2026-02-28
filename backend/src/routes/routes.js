@@ -10,19 +10,29 @@ const logger = require('../utils/logger');
  */
 router.get('/search', authMiddleware.authenticateToken, async (req, res) => {
     try {
-        const { source, destination } = req.query;
+    const { source, destination, sourceId, destinationId } = req.query;
 
-        if (!source || !destination) {
+        if ((!source || !destination) && (!sourceId || !destinationId)) {
             return res.status(400).json({
                 success: false,
                 error: {
                     code: 'MISSING_PARAMETERS',
-                    message: 'Source and destination are required'
+                    message: 'Source/Destination names or IDs are required'
                 }
             });
         }
 
-        if (source.toLowerCase().trim() === destination.toLowerCase().trim()) {
+        if (sourceId && destinationId && sourceId.toString().trim() === destinationId.toString().trim()) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'SAME_SOURCE_DESTINATION',
+                    message: 'Source and destination cannot be the same'
+                }
+            });
+        }
+
+        if (source && destination && source.toLowerCase().trim() === destination.toLowerCase().trim()) {
             return res.status(400).json({
                 success: false,
                 error: {
@@ -33,23 +43,53 @@ router.get('/search', authMiddleware.authenticateToken, async (req, res) => {
         }
 
         const db = getFirestore();
-        
-        // Search for routes that match source and destination (case-insensitive)
-        const routesSnapshot = await db.collection('routes')
-            .where('active', '==', true)
-            .get();
+        const routesSnapshot = await db.collection('routes').get();
 
         const matchingRoutes = [];
+        const searchSourceId = sourceId ? sourceId.toString().trim() : null;
+        const searchDestinationId = destinationId ? destinationId.toString().trim() : null;
+        const searchSourceName = source ? source.toLowerCase().trim() : null;
+        const searchDestinationName = destination ? destination.toLowerCase().trim() : null;
+
+        const isRouteActive = (routeData) => {
+            // Backward compatibility with older documents:
+            // active: true/false, active: "true"/"false", isActive: boolean, status: "active"/"inactive"
+            if (typeof routeData?.active === 'boolean') return routeData.active;
+            if (typeof routeData?.active === 'string') return routeData.active.toLowerCase() === 'true';
+            if (typeof routeData?.isActive === 'boolean') return routeData.isActive;
+            if (typeof routeData?.status === 'string') return routeData.status.toLowerCase() === 'active';
+            // Default to active for legacy docs where active flag is missing.
+            return true;
+        };
+
+        const normalizeId = (value) => {
+            if (value === undefined || value === null) return null;
+            return value.toString().trim();
+        };
+
+        const normalizeName = (value) => {
+            if (!value) return null;
+            return value.toString().toLowerCase().trim();
+        };
         
         routesSnapshot.forEach(doc => {
             const routeData = doc.data();
-            const routeSource = routeData.source?.name?.toLowerCase().trim();
-            const routeDestination = routeData.destination?.name?.toLowerCase().trim();
-            const searchSource = source.toLowerCase().trim();
-            const searchDestination = destination.toLowerCase().trim();
+            if (!isRouteActive(routeData)) return;
 
-            // Check if source and destination match
-            if (routeSource === searchSource && routeDestination === searchDestination) {
+            const routeSourceId = normalizeId(routeData.source?.stopId || routeData.source?.id || routeData.sourceId);
+            const routeDestinationId = normalizeId(routeData.destination?.stopId || routeData.destination?.id || routeData.destinationId);
+            const routeSource = normalizeName(routeData.source?.name || routeData.sourceName);
+            const routeDestination = normalizeName(routeData.destination?.name || routeData.destinationName);
+
+            const matchesById = searchSourceId && searchDestinationId
+                && routeSourceId === searchSourceId
+                && routeDestinationId === searchDestinationId;
+
+            const matchesByName = searchSourceName && searchDestinationName
+                && routeSource === searchSourceName
+                && routeDestination === searchDestinationName;
+
+            if (matchesById || matchesByName) {
                 matchingRoutes.push({
                     id: doc.id,
                     ...routeData
@@ -57,7 +97,7 @@ router.get('/search', authMiddleware.authenticateToken, async (req, res) => {
             }
         });
 
-        logger.info(`Route search: ${source} -> ${destination}, found ${matchingRoutes.length} routes`);
+        logger.info(`Route search: ${sourceId || source} -> ${destinationId || destination}, found ${matchingRoutes.length} routes`);
 
         res.status(200).json({
             success: true,
@@ -87,15 +127,24 @@ router.get('/', authMiddleware.authenticateToken, async (req, res) => {
     try {
         const db = getFirestore();
         const snapshot = await db.collection('routes')
-            .where('active', '==', true)
             .orderBy('createdAt', 'desc')
             .get();
 
         const routes = [];
+        const isRouteActive = (routeData) => {
+            if (typeof routeData?.active === 'boolean') return routeData.active;
+            if (typeof routeData?.active === 'string') return routeData.active.toLowerCase() === 'true';
+            if (typeof routeData?.isActive === 'boolean') return routeData.isActive;
+            if (typeof routeData?.status === 'string') return routeData.status.toLowerCase() === 'active';
+            return true;
+        };
+
         snapshot.forEach(doc => {
+            const data = doc.data();
+            if (!isRouteActive(data)) return;
             routes.push({
                 id: doc.id,
-                ...doc.data()
+                ...data
             });
         });
 
@@ -138,8 +187,15 @@ router.get('/:id', authMiddleware.authenticateToken, async (req, res) => {
         }
 
         const routeData = routeDoc.data();
-        
-        if (!routeData.active) {
+
+        const isRouteActive =
+            (typeof routeData?.active === 'boolean' && routeData.active) ||
+            (typeof routeData?.active === 'string' && routeData.active.toLowerCase() === 'true') ||
+            (typeof routeData?.isActive === 'boolean' && routeData.isActive) ||
+            (typeof routeData?.status === 'string' && routeData.status.toLowerCase() === 'active') ||
+            (routeData?.active === undefined && routeData?.isActive === undefined && routeData?.status === undefined);
+
+        if (!isRouteActive) {
             return res.status(404).json({
                 success: false,
                 error: {

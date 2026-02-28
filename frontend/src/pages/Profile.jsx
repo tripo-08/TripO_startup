@@ -16,6 +16,7 @@ import {
 import { getAuth } from 'firebase/auth';
 import { api } from '../services/api';
 import PassengerBottomNav from '../components/layout/PassengerBottomNav';
+import ProviderBottomNav from '../components/layout/ProviderBottomNav';
 
 export default function Profile() {
     const navigate = useNavigate();
@@ -37,7 +38,8 @@ export default function Profile() {
                     const response = await api.get('/auth/profile', token);
 
                     const backendUser = response.data.user;
-                    const role = backendUser.role || 'Passenger';
+                    const role = (backendUser.role || 'passenger').toLowerCase();
+                    const isProviderRole = role === 'transport_provider' || role === 'provider' || role === 'both';
 
                     setUser({
                         ...backendUser, // Use backend data as primary
@@ -45,7 +47,7 @@ export default function Profile() {
                         email: backendUser.email || currentUser.email,
                         phoneNumber: backendUser.phoneNumber || backendUser.profile?.phone || currentUser.phoneNumber || 'Not linked',
                         photoURL: backendUser.photoURL || backendUser.profile?.avatar || currentUser.photoURL,
-                        role: role,
+                        role,
                         isEmailVerified: currentUser.emailVerified,
                         isPhoneVerified: !!(backendUser.phone || currentUser.phoneNumber),
                         isIdVerified: backendUser.verification?.identity || false,
@@ -55,7 +57,7 @@ export default function Profile() {
                     });
 
                     // 3. If Provider, Fetch Provider Details
-                    if (role === 'transport_provider' || role === 'both') {
+                    if (isProviderRole) {
                         try {
                             const providerResponse = await api.get('/transport-providers/profile', token);
                             if (providerResponse.data && providerResponse.data.provider) {
@@ -138,6 +140,8 @@ export default function Profile() {
             </div>
         );
     };
+
+    const isProviderRole = user?.role === 'transport_provider' || user?.role === 'provider' || user?.role === 'both';
 
     return (
         <div className="min-h-screen bg-white pb-24 font-sans text-gray-900">
@@ -370,7 +374,7 @@ export default function Profile() {
                 )}
             </div>
 
-            <PassengerBottomNav />
+            {isProviderRole ? <ProviderBottomNav /> : <PassengerBottomNav />}
         </div>
     );
 }

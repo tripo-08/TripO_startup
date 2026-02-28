@@ -1,36 +1,29 @@
-import React from 'react';
-import { ArrowLeft, Clock, MapPin, Calendar, Bus, Car, Users } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowLeft, Clock, Calendar, Bus, Car, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { bookingService } from '../services/bookingService';
 import PassengerBottomNav from '../components/layout/PassengerBottomNav';
 
 export default function PassengerBookings() {
     const navigate = useNavigate();
+    const [bookings, setBookings] = useState([]);
+    const [loading, setLoading] = useState(true);
 
-    // Static data for upcoming bookings
-    const bookings = [
-        {
-            id: 201,
-            from: 'Pune',
-            to: 'Nashik',
-            date: 'Tomorrow, 17 Jan',
-            time: '07:00 AM',
-            ticketId: 'TRP-8829',
-            status: 'Confirmed',
-            type: 'Bus',
-            operator: 'Purple Travels'
-        },
-        {
-            id: 202,
-            from: 'Nashik',
-            to: 'Shirdi',
-            date: 'Sat, 19 Jan',
-            time: '10:00 AM',
-            ticketId: 'TRP-9921',
-            status: 'Pending',
-            type: 'Cab',
-            operator: 'City Cabs'
-        },
-    ];
+    useEffect(() => {
+        const loadBookings = async () => {
+            try {
+                const response = await bookingService.listBookings({ role: 'passenger' });
+                const list = response?.data?.bookings || [];
+                setBookings(list);
+            } catch (error) {
+                console.error('Failed to load bookings', error);
+                setBookings([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadBookings();
+    }, []);
 
     return (
         <div className="min-h-screen bg-gray-50 pb-24">
@@ -46,10 +39,19 @@ export default function PassengerBookings() {
 
             {/* Bookings List */}
             <div className="p-4 space-y-4">
-                {bookings.length > 0 ? (
+                {loading && (
+                    <div className="text-center py-12 text-gray-500">
+                        Loading bookings...
+                    </div>
+                )}
+                {!loading && bookings.length > 0 ? (
                     bookings.map((booking) => (
-                        <div key={booking.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative">
-                            <div className={`absolute top-0 right-0 px-3 py-1 text-xs font-bold rounded-bl-xl ${booking.status === 'Confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                        <div
+                            key={booking.id}
+                            className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative cursor-pointer"
+                            onClick={() => navigate(`/booking/${booking.id}`)}
+                        >
+                            <div className={`absolute top-0 right-0 px-3 py-1 text-xs font-bold rounded-bl-xl ${booking.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                                 }`}>
                                 {booking.status}
                             </div>
@@ -57,11 +59,11 @@ export default function PassengerBookings() {
                             <div className="p-4">
                                 <div className="flex items-center gap-2 mb-4">
                                     <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-                                        {booking.type === 'Bus' ? <Bus size={20} /> : booking.type === 'Cab' ? <Car size={20} /> : <Users size={20} />}
+                                        {booking.ride?.vehicle?.type === 'bus' ? <Bus size={20} /> : booking.ride?.vehicle?.type === 'car' ? <Car size={20} /> : <Users size={20} />}
                                     </div>
                                     <div>
-                                        <p className="text-sm font-bold text-gray-900">{booking.operator}</p>
-                                        <p className="text-xs text-gray-500">Ticket ID: {booking.ticketId}</p>
+                                        <p className="text-sm font-bold text-gray-900">{booking.ride?.vehicle?.make || 'Ride'}</p>
+                                        <p className="text-xs text-gray-500">Booking ID: {booking.id}</p>
                                     </div>
                                 </div>
 
@@ -73,10 +75,16 @@ export default function PassengerBookings() {
                                     </div>
                                     <div className="flex-1 space-y-4">
                                         <div>
-                                            <p className="text-sm font-bold text-gray-900">{booking.from}</p>
+                                            <p className="text-sm font-bold text-gray-900">{booking.ride?.origin?.city || 'Origin'}</p>
+                                            {booking.pickupPoint && (
+                                                <p className="text-xs text-gray-500">Pickup: {booking.pickupPoint}</p>
+                                            )}
                                         </div>
                                         <div>
-                                            <p className="text-sm font-bold text-gray-900">{booking.to}</p>
+                                            <p className="text-sm font-bold text-gray-900">{booking.ride?.destination?.city || 'Destination'}</p>
+                                            {booking.dropoffPoint && (
+                                                <p className="text-xs text-gray-500">Drop-off: {booking.dropoffPoint}</p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -84,17 +92,17 @@ export default function PassengerBookings() {
                                 <div className="flex items-center gap-4 text-sm text-gray-600 border-t border-gray-100 pt-3">
                                     <div className="flex items-center gap-1">
                                         <Calendar size={16} />
-                                        <span>{booking.date}</span>
+                                        <span>{booking.ride?.departureDate || 'N/A'}</span>
                                     </div>
                                     <div className="flex items-center gap-1">
                                         <Clock size={16} />
-                                        <span>{booking.time}</span>
+                                        <span>{booking.ride?.departureTime || 'N/A'}</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     ))
-                ) : (
+                ) : !loading && (
                     <div className="text-center py-12 text-gray-500">
                         No upcoming bookings.
                     </div>

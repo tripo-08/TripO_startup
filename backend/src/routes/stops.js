@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
             throw new Error("Firestore not initialized");
         }
 
-        const snapshot = await db.collection('stops').orderBy('name', 'asc').get();
+        const snapshot = await db.collection('stops').orderBy('created_at', 'asc').get();
         if (snapshot.empty) {
             console.log("No stops found in Firestore.");
             return res.status(200).json({ success: true, data: [] });

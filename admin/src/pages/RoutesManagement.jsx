@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, MapPin, Route, ToggleLeft, ToggleRight, X } from 'l
 
 const RoutesManagement = () => {
     const [routes, setRoutes] = useState([]);
+    const [stops, setStops] = useState([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
@@ -36,8 +37,24 @@ const RoutesManagement = () => {
         }
     };
 
+    const fetchStops = async () => {
+        try {
+            const token = localStorage.getItem('adminToken');
+            const response = await fetch(`${API_URL}/admin/stops`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (data.success) {
+                setStops(data.data || []);
+            }
+        } catch (err) {
+            console.error('Error fetching stops:', err);
+        }
+    };
+
     useEffect(() => {
         fetchRoutes();
+        fetchStops();
     }, []);
 
     const resetForm = () => {
@@ -131,6 +148,28 @@ const RoutesManagement = () => {
             return;
         }
 
+        const findStopByName = (name) => {
+            if (!name) return null;
+            const normalized = name.toLowerCase().trim();
+            return stops.find(stop => stop.name?.toLowerCase().trim() === normalized) || null;
+        };
+
+        const sourceStop = findStopByName(formData.sourceName);
+        const destStop = findStopByName(formData.destinationName);
+        if (!sourceStop || !destStop) {
+            setError('Please select Source and Destination from Admin Stops');
+            setSubmitting(false);
+            return;
+        }
+
+        const intermediateStopNames = formData.intermediateStops.filter(stop => stop.trim() !== '');
+        const intermediateStopsResolved = intermediateStopNames.map((name) => findStopByName(name));
+        if (intermediateStopsResolved.some(stop => !stop)) {
+            setError('All intermediate stops must be selected from Admin Stops');
+            setSubmitting(false);
+            return;
+        }
+
         try {
             const token = localStorage.getItem('adminToken');
             const url = editingRoute 
@@ -142,16 +181,16 @@ const RoutesManagement = () => {
             // Prepare data for backend
             const routeData = {
                 source: { 
-                    stopId: `manual_${Date.now()}_src`, 
-                    name: formData.sourceName.trim() 
+                    stopId: sourceStop.id,
+                    name: sourceStop.name
                 },
                 destination: { 
-                    stopId: `manual_${Date.now()}_dest`, 
-                    name: formData.destinationName.trim() 
+                    stopId: destStop.id,
+                    name: destStop.name
                 },
-                stops: validIntermediateStops.map((stopName, index) => ({
-                    stopId: `manual_${Date.now()}_${index}`,
-                    name: stopName.trim()
+                stops: intermediateStopsResolved.map((stop) => ({
+                    stopId: stop.id,
+                    name: stop.name
                 })),
                 active: formData.active
             };
@@ -284,6 +323,7 @@ const RoutesManagement = () => {
                                     type="text"
                                     value={formData.sourceName}
                                     onChange={(e) => setFormData(prev => ({ ...prev, sourceName: e.target.value }))}
+                                    list="admin-stop-options"
                                     placeholder="Enter source stop name"
                                     className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400"
                                     required
@@ -297,6 +337,7 @@ const RoutesManagement = () => {
                                     type="text"
                                     value={formData.destinationName}
                                     onChange={(e) => setFormData(prev => ({ ...prev, destinationName: e.target.value }))}
+                                    list="admin-stop-options"
                                     placeholder="Enter destination stop name"
                                     className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400"
                                     required
@@ -324,6 +365,7 @@ const RoutesManagement = () => {
                                                 type="text"
                                                 value={stop}
                                                 onChange={(e) => updateIntermediateStop(index, e.target.value)}
+                                                list="admin-stop-options"
                                                 placeholder={`Intermediate stop ${index + 1}`}
                                                 className="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400"
                                                 required
@@ -368,6 +410,11 @@ const RoutesManagement = () => {
 
                             {/* Active Status */}
                             <div>
+                                <datalist id="admin-stop-options">
+                                    {stops.map((stop) => (
+                                        <option key={stop.id} value={stop.name} />
+                                    ))}
+                                </datalist>
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
                                         type="checkbox"

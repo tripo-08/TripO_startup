@@ -1,6 +1,15 @@
 import { api } from './api';
+import { authService } from './auth';
 
 export const rideService = {
+    isRealRideId(id) {
+        return !!id && typeof id === 'string' && !id.startsWith('mock-');
+    },
+
+    filterRealRides(rides) {
+        return (Array.isArray(rides) ? rides : []).filter((ride) => this.isRealRideId(ride?.id));
+    },
+
     async searchRides(filters = {}) {
         try {
             const params = new URLSearchParams();
@@ -28,5 +37,38 @@ export const rideService = {
             console.error('Search API failed:', error);
             return [];
         }
+    },
+
+    async getRideById(id) {
+        if (!id) return null;
+        try {
+            const response = await api.get(`/rides/${id}`);
+            return response.data || response;
+        } catch (error) {
+            console.error('Failed to fetch ride:', error);
+            return null;
+        }
+    },
+
+    async getProviderRides() {
+        try {
+            const token = await authService.getToken();
+            const response = await api.get('/rides/provider/my-rides', token);
+            if (Array.isArray(response?.data?.rides)) return this.filterRealRides(response.data.rides);
+            if (Array.isArray(response?.data?.data?.rides)) return this.filterRealRides(response.data.data.rides);
+            if (Array.isArray(response?.rides)) return this.filterRealRides(response.rides);
+            return [];
+        } catch (error) {
+            console.error('Failed to fetch provider rides:', error);
+            return [];
+        }
+    },
+
+    async cancelRide(id) {
+        if (!id) {
+            throw new Error('Ride ID is required');
+        }
+        const token = await authService.getToken();
+        return api.delete(`/rides/${id}`, token);
     }
 };

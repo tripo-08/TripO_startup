@@ -296,7 +296,7 @@ const adminController = {
     getStops: async (req, res) => {
         try {
             const db = getFirestore();
-            const snapshot = await db.collection('stops').orderBy('created_at', 'desc').get();
+            const snapshot = await db.collection('stops').orderBy('created_at', 'asc').get();
             const stops = [];
 
             snapshot.forEach(doc => {

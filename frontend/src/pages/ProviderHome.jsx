@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/auth';
+import { bookingService } from '../services/bookingService';
+import { rideService } from '../services/rideService';
+import { socketService } from '../services/socket';
 import {
     Bell,
     MapPin,
@@ -9,20 +12,20 @@ import {
     ChevronDown,
     PlusCircle,
     Clock,
-    Star,
     Users,
     Bus
 } from 'lucide-react';
 import ProviderBottomNav from '../components/layout/ProviderBottomNav';
 import { getAuth } from "firebase/auth";
 
-import { api } from '../services/api';
-
 export default function ProviderHome() {
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
     const [userProfile, setUserProfile] = useState(null);
     const [showProfileMenu, setShowProfileMenu] = useState(false);
+    const [rides, setRides] = useState([]);
+    const [bookings, setBookings] = useState([]);
+    const [loadingData, setLoadingData] = useState(true);
 
     useEffect(() => {
         const auth = getAuth();
@@ -54,6 +57,58 @@ export default function ProviderHome() {
         return () => unsubscribe();
     }, [navigate]);
 
+    useEffect(() => {
+        const loadProviderData = async () => {
+            try {
+                const [ridesList, bookingsRes] = await Promise.all([
+                    rideService.getProviderRides(),
+                    bookingService.listBookings({ role: 'driver' })
+                ]);
+                setRides(Array.isArray(ridesList) ? ridesList : []);
+                setBookings(bookingsRes?.data?.bookings || []);
+            } catch (error) {
+                console.error('Failed to load provider data', error);
+                setRides([]);
+                setBookings([]);
+            } finally {
+                setLoadingData(false);
+            }
+        };
+        loadProviderData();
+    }, []);
+
+    useEffect(() => {
+        const handleRideUpdate = (payload) => {
+            if (!payload?.rideId || payload.availableSeats === undefined) return;
+            setRides((prev) => prev.map((ride) => (
+                ride.id === payload.rideId ? { ...ride, availableSeats: payload.availableSeats } : ride
+            )));
+        };
+
+        const handleBookingStatus = async () => {
+            try {
+                const [ridesList, bookingsRes] = await Promise.all([
+                    rideService.getProviderRides(),
+                    bookingService.listBookings({ role: 'driver' })
+                ]);
+                setRides(Array.isArray(ridesList) ? ridesList : []);
+                setBookings(bookingsRes?.data?.bookings || []);
+            } catch (error) {
+                console.error('Failed to refresh provider data', error);
+            }
+        };
+
+        rides.forEach((ride) => socketService.joinRide(ride.id));
+        socketService.on('ride_updated', handleRideUpdate);
+        socketService.on('booking_status_changed', handleBookingStatus);
+
+        return () => {
+            socketService.off('ride_updated', handleRideUpdate);
+            socketService.off('booking_status_changed', handleBookingStatus);
+            rides.forEach((ride) => socketService.leaveRide(ride.id));
+        };
+    }, [rides]);
+
     const getLocationString = () => {
         if (!userProfile?.location) return 'Pune, India';
         const { city, state } = userProfile.location;
@@ -76,34 +131,28 @@ export default function ProviderHome() {
         navigate('/schedule-ride');
     };
 
-    // Static data for Quick Services/Stats (Adapted for Provider)
-    const quickStats = [
-        { icon: Users, label: 'Passengers', value: '124', color: 'bg-blue-100 text-blue-600' },
-        { icon: Star, label: 'Rating', value: '4.8', color: 'bg-yellow-100 text-yellow-600' },
-        { icon: Bus, label: 'Trips', value: '45', color: 'bg-green-100 text-green-600' },
-        { icon: Clock, label: 'Hours', value: '120', color: 'bg-purple-100 text-purple-600' },
-    ];
+    const bookingsByRide = useMemo(() => {
+        const map = new Map();
+        bookings.forEach((booking) => {
+            if (!booking.rideId) return;
+            const current = map.get(booking.rideId) || 0;
+            map.set(booking.rideId, current + (booking.seatsBooked || 0));
+        });
+        return map;
+    }, [bookings]);
 
-    // Static data for Upcoming Scheduled Rides
-    const upcomingRides = [
-        {
-            id: 1,
-            route: 'Pune → Mumbai',
-            time: 'Tomorrow, 6:00 AM',
-            seatsBooked: 8,
-            seatsTotal: 40,
-            status: 'Scheduled',
-            earnings: 4500
-        },
-        {
-            id: 2,
-            route: 'Pune → Nashik',
-            time: 'Fri, 18 Jan, 7:00 AM',
-            seatsBooked: 2,
-            seatsTotal: 4,
-            status: 'Scheduled',
-            earnings: 1200
-        }
+    const upcomingRides = useMemo(() => {
+        return rides.filter((ride) => ride.status === 'published');
+    }, [rides]);
+
+    const totalPassengers = useMemo(() => {
+        return bookings.reduce((sum, booking) => sum + (booking.seatsBooked || 0), 0);
+    }, [bookings]);
+
+    const quickStats = [
+        { icon: Users, label: 'Passengers', value: String(totalPassengers), color: 'bg-blue-100 text-blue-600' },
+        { icon: Bus, label: 'Trips', value: String(rides.length), color: 'bg-green-100 text-green-600' },
+        { icon: Clock, label: 'Upcoming', value: String(upcomingRides.length), color: 'bg-purple-100 text-purple-600' },
     ];
 
     return (
@@ -185,7 +234,7 @@ export default function ProviderHome() {
                 {/* Quick Stats */}
                 <div>
                     <h2 className="text-lg font-bold text-gray-900 mb-4">Dashboard</h2>
-                    <div className="grid grid-cols-4 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                         {quickStats.map((stat, index) => (
                             <div key={index} className="flex flex-col items-center p-2 bg-white rounded-xl shadow-sm border border-gray-100">
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${stat.color}`}>
@@ -202,34 +251,39 @@ export default function ProviderHome() {
                 <div>
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-lg font-bold text-gray-900">Your Upcoming Rides</h2>
-                        <button className="text-blue-600 text-sm font-medium">View all</button>
+                        <button className="text-blue-600 text-sm font-medium" onClick={() => navigate('/my-rides')}>View all</button>
                     </div>
 
                     <div className="space-y-4">
-                        {upcomingRides.map((ride) => (
-                            <div key={ride.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden">
-                                <div className="absolute top-0 right-0 bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-bl-xl">
-                                    {ride.status}
-                                </div>
-
-                                <h3 className="text-lg font-bold text-gray-900 mb-1">{ride.route}</h3>
-                                <p className="text-gray-500 text-sm mb-3 flex items-center gap-1">
-                                    <Clock size={14} /> {ride.time}
-                                </p>
-
-                                <div className="flex items-center justify-between border-t border-gray-100 pt-3">
-                                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                                        <Users size={16} />
-                                        <span>{ride.seatsBooked}/{ride.seatsTotal} Booked</span>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-xs text-gray-500">Est. Earnings</div>
-                                        <div className="text-lg font-bold text-blue-900">₹{ride.earnings}</div>
-                                    </div>
-                                </div>
+                        {loadingData && (
+                            <div className="text-center py-8 text-gray-500 text-sm bg-white rounded-2xl border border-dashed border-gray-300">
+                                Loading rides...
                             </div>
-                        ))}
-                        {upcomingRides.length === 0 && (
+                        )}
+                        {!loadingData && upcomingRides.map((ride) => {
+                            const seatsBooked = Math.max(0, (ride.totalSeats || 0) - (ride.availableSeats || 0));
+                            const bookedFromBookings = bookingsByRide.get(ride.id) || seatsBooked;
+                            return (
+                                <div key={ride.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-bl-xl">
+                                        Scheduled
+                                    </div>
+
+                                    <h3 className="text-lg font-bold text-gray-900 mb-1">{ride.origin?.city} → {ride.destination?.city}</h3>
+                                    <p className="text-gray-500 text-sm mb-3 flex items-center gap-1">
+                                        <Clock size={14} /> {ride.departureDate}, {ride.departureTime}
+                                    </p>
+
+                                    <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                            <Users size={16} />
+                                            <span>{bookedFromBookings}/{ride.totalSeats || ride.vehicle?.seats || 0} Booked</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {!loadingData && upcomingRides.length === 0 && (
                             <div className="text-center py-8 text-gray-500 text-sm bg-white rounded-2xl border border-dashed border-gray-300">
                                 No upcoming rides scheduled.
                             </div>

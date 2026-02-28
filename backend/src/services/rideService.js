@@ -39,6 +39,26 @@ class RideService {
     return { city, coordinates };
   }
 
+  getRideDepartureDateTime(ride) {
+    if (!ride) return null;
+    const datePart = ride.departureDate;
+    const timePart = ride.departureTime;
+    if (!datePart || !timePart) return null;
+    const departure = new Date(`${datePart}T${timePart}`);
+    if (Number.isNaN(departure.getTime())) return null;
+    return departure;
+  }
+
+  isRideVisibleForPassenger(ride) {
+    if (!ride) return false;
+    if ((ride.status || '').toLowerCase() !== 'published') return false;
+    const availableSeats = Number(ride.availableSeats ?? 0);
+    if (!Number.isFinite(availableSeats) || availableSeats <= 0) return false;
+    const departure = this.getRideDepartureDateTime(ride);
+    if (!departure) return false;
+    return departure > new Date();
+  }
+
   /**
    * Get database instance (lazy initialization)
    */
@@ -204,6 +224,9 @@ class RideService {
         }));
 
         totalCount = rides.length;
+
+        // Passenger-facing visibility rules: hide full and expired rides.
+        rides = rides.filter((ride) => this.isRideVisibleForPassenger(ride));
 
         // Apply basic filters
         if (origin) {
@@ -1016,18 +1039,21 @@ class RideService {
         routeId
       } = rideData;
 
-      // Validate the predefined route exists and is active
+      // Validate predefined route if provided (legacy/create-from-map fallback may omit routeId)
       const { getFirestore } = require('../config/firebase');
       const db = getFirestore();
+      let routeData_db = null;
 
-      const routeDoc = await db.collection('routes').doc(routeId).get();
-      if (!routeDoc.exists) {
-        throw new Error('Predefined route not found');
-      }
+      if (routeId) {
+        const routeDoc = await db.collection('routes').doc(routeId).get();
+        if (!routeDoc.exists) {
+          throw new Error('Predefined route not found');
+        }
 
-      const routeData_db = routeDoc.data();
-      if (!routeData_db.active) {
-        throw new Error('Predefined route is not active');
+        routeData_db = routeDoc.data();
+        if (!routeData_db.active) {
+          throw new Error('Predefined route is not active');
+        }
       }
 
       // Validate vehicle exists and belongs to driver
@@ -1081,12 +1107,12 @@ class RideService {
           type: this.getVehicleCategory(vehicleData.details)
         },
         routeInfo: {
-          routeId: routeId,
-          createdFromPredefinedRoute: true,
+          routeId: routeId || null,
+          createdFromPredefinedRoute: !!routeId,
           originalRoute: {
-            source: routeData_db.source || null,
-            destination: routeData_db.destination || null,
-            stops: routeData_db.stops || []
+            source: routeData_db?.source || null,
+            destination: routeData_db?.destination || null,
+            stops: routeData_db?.stops || []
           }
         },
         status: 'published',

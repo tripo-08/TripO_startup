@@ -135,7 +135,8 @@ class MapsService {
                     origin: `${origin.lat},${origin.lng}`,
                     destination: `${destination.lat},${destination.lng}`,
                     mode: 'driving',
-                    alternatives: options.alternatives || false,
+                    alternatives: options.alternatives ? 'true' : 'false',
+                    alternatives_count: Number(options.alternativesCount) || 3,
                     steps: true,
                     overview: 'full'
                 }

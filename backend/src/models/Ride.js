@@ -223,7 +223,7 @@ class Ride {
   /**
    * Add passenger to ride
    */
-  async addPassenger(passengerId, seatsBooked, pickupPoint = null) {
+  async addPassenger(passengerId, seatsBooked, pickupPoint = null, dropoffPoint = null) {
     try {
       if (this.availableSeats < seatsBooked) {
         throw new Error('Not enough available seats');
@@ -234,7 +234,7 @@ class Ride {
         status: this.bookingPolicy.instantBooking ? 'confirmed' : 'requested',
         bookingTime: new Date(),
         pickupPoint: pickupPoint || this.origin.address,
-        dropoffPoint: this.destination.address
+        dropoffPoint: dropoffPoint || this.destination.address
       };
 
       // Update available seats if instant booking

@@ -25,12 +25,34 @@ jest.mock('../middleware/auth', () => ({
     req.user = { uid: 'test-uid', email: 'test@example.com', role: 'both' };
     next();
   },
+  optionalAuth: (req, res, next) => {
+    req.user = { uid: 'test-uid', email: 'test@example.com', role: 'both' };
+    next();
+  },
   requireRole: (roles) => (req, res, next) => {
     if (roles.includes(req.user.role) || req.user.role === 'both') {
       next();
     } else {
       res.status(403).json({ success: false, error: { code: 'INSUFFICIENT_PERMISSIONS' } });
     }
+  },
+  requireProvider: (req, res, next) => {
+    if (req.user.role === 'provider' || req.user.role === 'transport_provider' || req.user.role === 'both') {
+      return next();
+    }
+    return res.status(403).json({ success: false, error: { code: 'INSUFFICIENT_PERMISSIONS' } });
+  },
+  requirePassenger: (req, res, next) => {
+    if (req.user.role === 'passenger' || req.user.role === 'both') {
+      return next();
+    }
+    return res.status(403).json({ success: false, error: { code: 'INSUFFICIENT_PERMISSIONS' } });
+  },
+  requireAdmin: (req, res, next) => {
+    if (req.user.role === 'admin') {
+      return next();
+    }
+    return res.status(403).json({ success: false, error: { code: 'INSUFFICIENT_PERMISSIONS' } });
   }
 }));
 

@@ -43,8 +43,12 @@ export default function Login() {
             // Claims might be outdated or missing, so backend DB is the source of truth.
             try {
                 const role = await authService.getUserRole(user.uid);
+                const normalizedRole = typeof role === 'string' ? role.toLowerCase() : '';
+                const isProviderRole = normalizedRole === 'transport_provider'
+                    || normalizedRole === 'provider'
+                    || normalizedRole === 'both';
 
-                if (role === 'transport_provider' || role === 'provider') {
+                if (isProviderRole) {
                     navigate('/provider-home', { replace: true });
                 } else {
                     navigate('/passenger-home', { replace: true });

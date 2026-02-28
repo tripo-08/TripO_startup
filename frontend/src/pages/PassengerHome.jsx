@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Input } from '../components/Input';
 import { authService } from '../services/auth';
 import { rideService } from '../services/rideService';
+import { socketService } from '../services/socket';
 import {
     Search,
     Bell,
@@ -130,7 +131,7 @@ export default function PassengerHome() {
         }
     };
 
-    const recommendedRides = allRides.slice(0, 3);
+    const recommendedRides = useMemo(() => allRides.slice(0, 3), [allRides]);
 
     const getUserName = () => {
         if (user?.displayName) return user.displayName.split(' ')[0];
@@ -206,13 +207,33 @@ export default function PassengerHome() {
             </div>
 
             <button
-                onClick={() => navigate(`/ride/details`, { state: { ride } })}
+                onClick={() => navigate(`/ride/${ride.id}`, { state: { ride } })}
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors shadow-blue-200 shadow-lg"
             >
                 View Details
             </button>
         </div>
     );
+
+    useEffect(() => {
+        const rideIds = allRides.map(r => r.id).filter(Boolean);
+        if (rideIds.length === 0) return;
+
+        const handleRideUpdate = (payload) => {
+            if (!payload?.rideId || payload.availableSeats === undefined) return;
+            setAllRides((prev) => prev.map((ride) => (
+                ride.id === payload.rideId ? { ...ride, availableSeats: payload.availableSeats } : ride
+            )));
+        };
+
+        rideIds.forEach((rideId) => socketService.joinRide(rideId));
+        socketService.on('ride_updated', handleRideUpdate);
+
+        return () => {
+            socketService.off('ride_updated', handleRideUpdate);
+            rideIds.forEach((rideId) => socketService.leaveRide(rideId));
+        };
+    }, [allRides]);
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">

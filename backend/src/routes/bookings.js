@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult, query } = require('express-validator');
 const { getDatabase, getAuth } = require('../config/firebase');
 const MessagingService = require('../services/messagingService');
-const { emitBookingStatusChange, emitUserNotification } = require('../config/socket');
+const { emitBookingStatusChange, emitUserNotification, emitRideUpdate } = require('../config/socket');
 const router = express.Router();
 
 // Helper function to get database instance
@@ -32,6 +32,7 @@ router.post('/', verifyToken, [
     body('rideId').notEmpty().withMessage('Ride ID is required'),
     body('seatsBooked').isInt({ min: 1, max: 8 }).withMessage('Seats booked must be between 1 and 8'),
     body('pickupPoint').optional().isString().withMessage('Pickup point must be a string'),
+    body('dropoffPoint').optional().isString().withMessage('Drop-off point must be a string'),
     body('passengerNotes').optional().isString().withMessage('Passenger notes must be a string')
 ], async (req, res) => {
     try {
@@ -40,7 +41,7 @@ router.post('/', verifyToken, [
             return res.status(400).json({ errors: errors.array() });
         }
 
-        const { rideId, seatsBooked, pickupPoint, passengerNotes } = req.body;
+        const { rideId, seatsBooked, pickupPoint, dropoffPoint, passengerNotes } = req.body;
 
         // Check if ride exists and is available
         const rideRef = getDB().ref(`rides/${rideId}`);
@@ -85,6 +86,8 @@ router.post('/', verifyToken, [
             }
         }
 
+        const isInstantBooking = rideData.preferences?.instantBooking !== false;
+
         // Create booking data
         const bookingData = {
             rideId,
@@ -92,6 +95,7 @@ router.post('/', verifyToken, [
             driverId: rideData.driverId,
             seatsBooked: parseInt(seatsBooked),
             pickupPoint: pickupPoint || rideData.origin.city,
+            dropoffPoint: dropoffPoint || rideData.destination.city,
             passengerNotes: passengerNotes || '',
             pricing: {
                 pricePerSeat: rideData.pricePerSeat,
@@ -104,9 +108,9 @@ router.post('/', verifyToken, [
                 transactionId: null,
                 status: 'pending'
             },
-            status: rideData.preferences?.instantBooking ? 'confirmed' : 'requested',
+            status: isInstantBooking ? 'confirmed' : 'requested',
             requestedAt: new Date().toISOString(),
-            confirmedAt: rideData.preferences?.instantBooking ? new Date().toISOString() : null
+            confirmedAt: isInstantBooking ? new Date().toISOString() : null
         };
 
         // Save booking to Firebase
@@ -114,9 +118,10 @@ router.post('/', verifyToken, [
         await newBookingRef.set(bookingData);
 
         // Update ride's available seats if instant booking
-        if (rideData.preferences?.instantBooking) {
+        if (isInstantBooking) {
+            const updatedAvailableSeats = rideData.availableSeats - seatsBooked;
             await rideRef.update({
-                availableSeats: rideData.availableSeats - seatsBooked,
+                availableSeats: updatedAvailableSeats,
                 updatedAt: new Date().toISOString()
             });
 
@@ -126,9 +131,12 @@ router.post('/', verifyToken, [
                 seatsBooked,
                 status: 'confirmed',
                 bookingTime: new Date().toISOString(),
-                pickupPoint: pickupPoint || rideData.origin.city
+                pickupPoint: pickupPoint || rideData.origin.city,
+                dropoffPoint: dropoffPoint || rideData.destination.city
             };
             await rideRef.update(passengerUpdate);
+
+            emitRideUpdate(rideId, { availableSeats: updatedAvailableSeats });
         }
 
         // Return created booking with ID
@@ -142,7 +150,7 @@ router.post('/', verifyToken, [
             await MessagingService.initializeBookingConversation(createdBooking);
             
             // If instant booking, enable full communication features
-            if (rideData.preferences?.instantBooking) {
+            if (isInstantBooking) {
                 await MessagingService.handleBookingLifecycleEvent(createdBooking, 'booking_confirmed');
                 
                 // Enable trip-specific communication channel
@@ -171,7 +179,7 @@ router.post('/', verifyToken, [
             });
 
             // If instant booking, notify passenger about confirmation
-            if (rideData.preferences?.instantBooking) {
+            if (isInstantBooking) {
                 emitBookingStatusChange(newBookingRef.key, req.user.uid, {
                     status: 'confirmed',
                     message: 'Your booking has been confirmed automatically!'
@@ -184,7 +192,7 @@ router.post('/', verifyToken, [
         res.status(201).json({
             success: true,
             data: createdBooking,
-            message: rideData.preferences?.instantBooking 
+            message: isInstantBooking
                 ? 'Booking confirmed successfully!' 
                 : 'Booking request sent to driver'
         });
@@ -387,8 +395,9 @@ router.put('/:id/approve', verifyToken, async (req, res) => {
         });
 
         // Update ride's available seats
+        const updatedAvailableSeats = rideData.availableSeats - bookingData.seatsBooked;
         await rideRef.update({
-            availableSeats: rideData.availableSeats - bookingData.seatsBooked,
+            availableSeats: updatedAvailableSeats,
             updatedAt: new Date().toISOString()
         });
 
@@ -398,9 +407,12 @@ router.put('/:id/approve', verifyToken, async (req, res) => {
             seatsBooked: bookingData.seatsBooked,
             status: 'confirmed',
             bookingTime: new Date().toISOString(),
-            pickupPoint: bookingData.pickupPoint
+            pickupPoint: bookingData.pickupPoint,
+            dropoffPoint: bookingData.dropoffPoint
         };
         await rideRef.update(passengerUpdate);
+
+        emitRideUpdate(bookingData.rideId, { availableSeats: updatedAvailableSeats });
 
         // Send booking confirmation message and enable communication
         try {
@@ -583,13 +595,16 @@ router.put('/:id/cancel', verifyToken, [
 
             if (rideSnapshot.exists()) {
                 const rideData = rideSnapshot.val();
+                const updatedAvailableSeats = rideData.availableSeats + bookingData.seatsBooked;
                 await rideRef.update({
-                    availableSeats: rideData.availableSeats + bookingData.seatsBooked,
+                    availableSeats: updatedAvailableSeats,
                     updatedAt: new Date().toISOString()
                 });
 
                 // Remove passenger from ride's passenger list
                 await rideRef.child(`passengers/${bookingData.passengerId}`).remove();
+
+                emitRideUpdate(bookingData.rideId, { availableSeats: updatedAvailableSeats });
             }
         }
 

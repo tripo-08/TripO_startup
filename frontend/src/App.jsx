@@ -17,6 +17,7 @@ import PassengerBookings from './pages/PassengerBookings';
 import MyRides from './pages/MyRides';
 import ScheduleRide from './pages/ScheduleRide';
 import RideDetails from './pages/RideDetails';
+import BookingDetails from './pages/BookingDetails';
 import CreateRideFromRoute from './pages/CreateRideFromRoute';
 import SplashScreen from './components/common/SplashScreen';
 import ErrorBoundary from './components/common/ErrorBoundary';
@@ -49,6 +50,7 @@ function App() {
                 <Route path="/schedule-ride" element={<ScheduleRide />} />
                 <Route path="/create-ride-from-route" element={<CreateRideFromRoute />} />
                 <Route path="/ride/:id" element={<RideDetails />} />
+                <Route path="/booking/:id" element={<BookingDetails />} />
                 <Route path="/register" element={<Register />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/login/passenger" element={<PassengerLogin />} />

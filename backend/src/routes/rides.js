@@ -97,7 +97,7 @@ router.post('/create-from-route', authMiddleware.authenticateToken, authMiddlewa
     body('availableSeats').isInt({ min: 1, max: 50 }).withMessage('Available seats must be between 1 and 50'),
     body('pricePerSeat').isFloat({ min: 1 }).withMessage('Price per seat must be greater than 0'),
     body('vehicle.id').notEmpty().withMessage('Vehicle ID is required'),
-    body('routeId').notEmpty().withMessage('Route ID is required')
+    body('routeId').optional({ nullable: true }).isString().trim()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -276,9 +276,8 @@ router.put('/:id', authMiddleware.authenticateToken, authMiddleware.requireProvi
 // DELETE /api/rides/:id - Cancel ride (owner only)
 router.delete('/:id', authMiddleware.authenticateToken, authMiddleware.requireProvider, async (req, res) => {
     try {
-        // Use Firebase directly for cancellation since it's a simple status update
-        const admin = require('firebase-admin');
-        const db = admin.database();
+        const { getDatabase } = require('../config/firebase');
+        const db = getDatabase();
 
         const rideRef = db.ref(`rides/${req.params.id}`);
         const snapshot = await rideRef.once('value');

@@ -318,75 +318,8 @@ function getDatabase() {
     return admin.database();
   } catch (error) {
     if (error.code === 'database/invalid-argument' || error.message.includes('Can\'t determine Firebase Database URL')) {
-      logger.warn('Firebase Database URL not configured. Falling back to mock database.');
-      const getStore = () => {
-        if (!global.mockRtdb) {
-          global.mockRtdb = {};
-        }
-        return global.mockRtdb;
-      };
-
-      const getAtPath = (store, pathParts) => {
-        return pathParts.reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : null), store);
-      };
-
-      const setAtPath = (store, pathParts, value, merge = false) => {
-        let curr = store;
-        for (let i = 0; i < pathParts.length - 1; i++) {
-          const part = pathParts[i];
-          if (!curr[part] || typeof curr[part] !== 'object') curr[part] = {};
-          curr = curr[part];
-        }
-        const last = pathParts[pathParts.length - 1];
-        if (merge && typeof curr[last] === 'object' && curr[last] !== null) {
-          curr[last] = { ...curr[last], ...value };
-        } else {
-          curr[last] = value;
-        }
-      };
-
-      const makeRef = (pathParts = []) => {
-        const key = pathParts.length ? pathParts[pathParts.length - 1] : null;
-        return {
-          key,
-          child: (childPath) => makeRef([...pathParts, ...childPath.split('/').filter(Boolean)]),
-          set: async (data) => {
-            const store = getStore();
-            setAtPath(store, pathParts, data, false);
-            return {};
-          },
-          update: async (data) => {
-            const store = getStore();
-            setAtPath(store, pathParts, data, true);
-            return {};
-          },
-          remove: async () => {
-            const store = getStore();
-            setAtPath(store, pathParts, null, false);
-            return {};
-          },
-        once: async () => {
-            const store = getStore();
-            const value = getAtPath(store, pathParts);
-            return {
-              val: () => value,
-              exists: () => value !== null && value !== undefined
-            };
-          },
-          on: () => { },
-          off: () => { },
-          orderByChild: () => makeRef(pathParts),
-          equalTo: () => makeRef(pathParts),
-          push: () => {
-            const newKey = `mock-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-            return makeRef([...pathParts, newKey]);
-          }
-        };
-      };
-
-      return {
-        ref: (path = '') => makeRef(path.split('/').filter(Boolean)),
-      };
+      logger.error('Firebase Database URL is missing or invalid. Set FIREBASE_DATABASE_URL in backend/.env to use real rides.');
+      throw new Error('Firebase Realtime Database is not configured. Please set FIREBASE_DATABASE_URL.');
     }
     throw error;
   }

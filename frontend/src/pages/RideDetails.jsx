@@ -1,8 +1,11 @@
-
-import { useLocation, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { authService } from '../services/auth';
+import { bookingService } from '../services/bookingService';
+import { rideService } from '../services/rideService';
+import { socketService } from '../services/socket';
 import {
     ArrowLeft,
-    MapPin,
     Star,
     Phone,
     MessageCircle,
@@ -14,13 +17,26 @@ import {
 export default function RideDetails() {
     const location = useLocation();
     const navigate = useNavigate();
+    const { id } = useParams();
+    const [rideData, setRideData] = useState(location.state?.ride || null);
+    const [loading, setLoading] = useState(true);
+    const [seatsToBook, setSeatsToBook] = useState(1);
+    const [bookingLoading, setBookingLoading] = useState(false);
+    const [pickupPoint, setPickupPoint] = useState('');
+    const [dropoffPoint, setDropoffPoint] = useState('');
 
-    // Fallback data if no state is passed
-    const passedRide = location.state?.ride;
+    const passedRide = rideData;
 
     const getLocationText = (value, fallback) => {
         if (!value) return fallback;
-        if (typeof value === 'string') return value;
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) return fallback;
+            if (trimmed.startsWith('ride/') || trimmed.startsWith('ride-') || trimmed.includes('mock-')) {
+                return fallback;
+            }
+            return trimmed;
+        }
         if (typeof value === 'object') {
             return value.name || value.city || fallback;
         }
@@ -28,14 +44,44 @@ export default function RideDetails() {
     };
 
     const sourceText = getLocationText(passedRide?.source || passedRide?.origin, 'Mumbai');
-    const destinationText = getLocationText(passedRide?.destination || passedRide?.destination, 'Pune');
+    const destinationText = getLocationText(passedRide?.destination || passedRide?.destination?.city, 'Pune');
+
+    const stopOptions = useMemo(() => {
+        const options = [];
+        const seen = new Set();
+        const addOption = (label) => {
+            if (!label) return;
+            const key = label.trim();
+            if (!key || seen.has(key)) return;
+            seen.add(key);
+            options.push({ value: key, label: key });
+        };
+
+        addOption(getLocationText(passedRide?.origin || passedRide?.source, ''));
+        addOption(getLocationText(passedRide?.destination, ''));
+
+        const intermediateStops = []
+            .concat(passedRide?.intermediateStops || [])
+            .concat(passedRide?.routeInfo?.originalRoute?.stops || [])
+            .concat(passedRide?.route?.stops || []);
+
+        intermediateStops.forEach((stop) => {
+            if (typeof stop === 'string') {
+                addOption(stop);
+                return;
+            }
+            addOption(stop?.name || stop?.city || stop?.address);
+        });
+
+        return options;
+    }, [passedRide]);
 
     const vehicleMake = passedRide?.vehicle?.make || '';
     const vehicleModel = passedRide?.vehicle?.model || '';
     const vehicleName = (vehicleMake || vehicleModel) ? `${vehicleMake} ${vehicleModel}`.trim() : (passedRide?.vehicleModel || 'Swift Dzire or similar');
 
-    const ride = {
-        id: passedRide?.id || 1,
+    const ride = useMemo(() => ({
+        id: passedRide?.id || id,
         source: sourceText,
         destination: destinationText,
         date: passedRide?.date || passedRide?.departureDate || 'Today',
@@ -65,7 +111,52 @@ export default function RideDetails() {
         get totalPrice() {
             return (this.basePrice + this.gst + this.platformFee).toFixed(2);
         }
-    };
+    }), [passedRide, id, sourceText, destinationText, vehicleName]);
+
+    useEffect(() => {
+        const loadRide = async () => {
+            if (!id) {
+                setLoading(false);
+                return;
+            }
+            const freshRide = await rideService.getRideById(id);
+            if (freshRide) {
+                setRideData(freshRide);
+            }
+            setLoading(false);
+        };
+        loadRide();
+    }, [id]);
+
+    useEffect(() => {
+        if (!id) return;
+        const handleRideUpdate = (payload) => {
+            if (!payload || payload.rideId !== id) return;
+            if (payload.availableSeats === undefined) return;
+            setRideData((prev) => prev ? { ...prev, availableSeats: payload.availableSeats } : prev);
+        };
+
+        socketService.joinRide(id);
+        socketService.on('ride_updated', handleRideUpdate);
+
+        return () => {
+            socketService.off('ride_updated', handleRideUpdate);
+            socketService.leaveRide(id);
+        };
+    }, [id]);
+
+    useEffect(() => {
+        const max = Math.max(1, ride.seatsAvailable || 1);
+        setSeatsToBook((prev) => Math.min(Math.max(1, prev), max));
+    }, [ride.seatsAvailable]);
+
+    useEffect(() => {
+        if (stopOptions.length === 0) return;
+        const originDefault = stopOptions.find((option) => option.value === sourceText)?.value || stopOptions[0]?.value || '';
+        const destinationDefault = stopOptions.find((option) => option.value === destinationText)?.value || stopOptions[stopOptions.length - 1]?.value || '';
+        setPickupPoint((prev) => prev || originDefault);
+        setDropoffPoint((prev) => prev || destinationDefault);
+    }, [stopOptions, sourceText, destinationText]);
 
     const handleShareRide = async () => {
         if (navigator.share) {
@@ -83,14 +174,55 @@ export default function RideDetails() {
         }
     };
 
-    const handleBookRide = () => {
-        // In a real app, integrate with payment gateway here
-        const confirmed = window.confirm(`Confirm booking for ${ride.currency}${ride.basePrice}?`);
-        if (confirmed) {
-            alert('Booking feature coming soon!');
-            // navigate('/booking-success'); // Todo: Implement success page
+    const handleBookRide = async () => {
+        const confirmed = window.confirm(`Confirm booking for ${ride.currency}${ride.basePrice} per seat?`);
+        if (!confirmed) return;
+        if (pickupPoint && dropoffPoint && pickupPoint === dropoffPoint) {
+            alert('Pickup and drop-off points must be different.');
+            return;
+        }
+
+        try {
+            setBookingLoading(true);
+            const token = await authService.getToken();
+            if (!token) {
+                alert('Please login to book a ride.');
+                navigate('/login');
+                return;
+            }
+
+            const payload = {
+                rideId: ride.id,
+                seatsBooked: seatsToBook,
+                pickupPoint: pickupPoint || ride.source,
+                dropoffPoint: dropoffPoint || ride.destination,
+                passengerNotes: ''
+            };
+
+            const response = await bookingService.createBooking(payload);
+            if (response?.error) {
+                alert(response.error);
+                return;
+            }
+
+            alert('Booking created successfully!');
+            if (ride.id) {
+                const refreshed = await rideService.getRideById(ride.id);
+                if (refreshed) {
+                    setRideData(refreshed);
+                }
+            }
+        } catch (error) {
+            console.error('Booking failed:', error);
+            alert('Failed to book ride. Please try again.');
+        } finally {
+            setBookingLoading(false);
         }
     };
+
+    if (loading) {
+        return <div className="min-h-screen bg-white flex items-center justify-center">Loading...</div>;
+    }
 
     return (
         <div className="min-h-screen bg-white pb-36 font-sans text-gray-900">
@@ -135,11 +267,43 @@ export default function RideDetails() {
                                 <p className="text-xs text-gray-500 mb-0.5">Pick-up</p>
                                 <h3 className="font-bold text-base leading-tight">{ride.source}</h3>
                                 <p className="text-xs text-gray-400">{ride.time}, {ride.date}</p>
+                                {stopOptions.length > 0 && (
+                                    <div className="mt-2">
+                                        <label className="text-[10px] uppercase tracking-wider text-gray-400">Select pickup</label>
+                                        <select
+                                            value={pickupPoint}
+                                            onChange={(e) => setPickupPoint(e.target.value)}
+                                            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm"
+                                        >
+                                            {stopOptions.map((option) => (
+                                                <option key={`pickup-${option.value}`} value={option.value}>
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <p className="text-xs text-gray-500 mb-0.5">Drop-off</p>
                                 <h3 className="font-bold text-base leading-tight">{ride.destination}</h3>
                                 <p className="text-xs text-gray-400">~ {ride.duration}</p>
+                                {stopOptions.length > 0 && (
+                                    <div className="mt-2">
+                                        <label className="text-[10px] uppercase tracking-wider text-gray-400">Select drop-off</label>
+                                        <select
+                                            value={dropoffPoint}
+                                            onChange={(e) => setDropoffPoint(e.target.value)}
+                                            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm"
+                                        >
+                                            {stopOptions.map((option) => (
+                                                <option key={`drop-${option.value}`} value={option.value}>
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -233,11 +397,32 @@ export default function RideDetails() {
 
             {/* Bottom Action */}
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 shadow-lg safe-area-bottom flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm text-gray-600">Seats to book</div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setSeatsToBook((s) => Math.max(1, s - 1))}
+                            className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-700"
+                        >
+                            -
+                        </button>
+                        <span className="w-6 text-center font-semibold">{seatsToBook}</span>
+                        <button
+                            onClick={() => setSeatsToBook((s) => Math.min(ride.seatsAvailable || 1, s + 1))}
+                            className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-700"
+                            disabled={seatsToBook >= (ride.seatsAvailable || 1)}
+                        >
+                            +
+                        </button>
+                    </div>
+                    <div className="text-xs text-gray-500">Remaining: {ride.seatsAvailable}</div>
+                </div>
                 <button
                     onClick={handleBookRide}
-                    className="w-full bg-black text-white py-3.5 rounded-xl font-bold text-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+                    disabled={bookingLoading || !ride.seatsAvailable}
+                    className="w-full bg-black text-white py-3.5 rounded-xl font-bold text-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                    Book Ride
+                    {bookingLoading ? 'Booking...' : 'Book Ride'}
                 </button>
                 <div
                     onClick={handleShareRide}
@@ -250,4 +435,3 @@ export default function RideDetails() {
         </div>
     );
 }
-

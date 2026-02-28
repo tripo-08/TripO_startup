@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Navigation, Calendar, Clock, Briefcase, Users } from 'lucide-react';
 import { authService } from '../services/auth';
@@ -264,25 +264,20 @@ export default function ScheduleRide() {
         updateVehicleType(vehicle);
     };
 
-    // Admin Stops State
-    const [adminStops, setAdminStops] = useState([]);
+    // Route Stops (Ola Maps) State
+    const [selectedStops, setSelectedStops] = useState([]);
 
-    useEffect(() => {
-        const loadStops = async () => {
-            try {
-                // Wait for auth to ensure token is available if needed (though stops is public, it's safer)
-                // Actually stops is public, but let's debug the 500 error.
-                // If it's a 500, it's backend.
-                const response = await api.get('/stops');
-                const stopList = Array.isArray(response) && response.length > 0 ? response : (response.data || []);
-                setAdminStops(Array.isArray(stopList) ? stopList : []);
-            } catch (err) {
-                console.error("Failed to load admin stops", err);
-                setAdminStops([]);
+    const toggleStop = (stop) => {
+        if (!stop) return;
+        setSelectedStops((prev) => {
+            const exists = prev.find((s) => (s.id || s.name) === (stop.id || stop.name));
+            if (exists) {
+                return prev.filter((s) => (s.id || s.name) !== (stop.id || stop.name));
             }
-        };
-        loadStops();
-    }, []);
+            return [...prev, stop];
+        });
+    };
+
 
     // Enhanced Search with Ola Maps
     const searchAddress = async (query, setSuggestions) => {
@@ -290,12 +285,6 @@ export default function ScheduleRide() {
             setSuggestions([]);
             return;
         }
-
-        const lowerQuery = query.toLowerCase();
-        // Local Admin Stops Search
-        const localResults = adminStops.filter(stop =>
-            stop.name.toLowerCase().includes(lowerQuery)
-        ).map(stop => ({ ...stop, type: 'stop' }));
 
         // Ola Maps Autocomplete
         if (query.length > 2) {
@@ -309,16 +298,16 @@ export default function ScheduleRide() {
                         placeId: p.place_id,
                         type: 'api'
                     }));
-                    setSuggestions([...localResults, ...apiResults]);
+                    setSuggestions(apiResults);
                 } else {
-                    setSuggestions(localResults);
+                    setSuggestions([]);
                 }
             } catch (e) {
                 console.error("Autocomplete error", e);
-                setSuggestions(localResults);
+                setSuggestions([]);
             }
         } else {
-            setSuggestions(localResults);
+            setSuggestions([]);
         }
     };
 
@@ -572,16 +561,28 @@ export default function ScheduleRide() {
                 departureTime: formData.time,
                 totalSeats: seatsValue,
                 pricePerSeat: priceValue,
+                intermediateStops: selectedStops.map((stop) => ({
+                    id: stop.id,
+                    name: stop.name,
+                    lat: Number(stop.lat),
+                    lng: Number(stop.lng)
+                })).filter((stop) => Number.isFinite(stop.lat) && Number.isFinite(stop.lng)),
                 luggageAllowed: formData.luggageAllowed,
                 maxLuggageWeight: formData.luggageAllowed ? Number(formData.luggageCapacity) : 0,
-                description: formData.description
+                description: formData.description,
+                preferences: {
+                    luggageAllowed: formData.luggageAllowed,
+                    luggageCapacity: formData.luggageAllowed ? Number(formData.luggageCapacity) : 0,
+                    description: formData.description,
+                    instantBooking: true
+                }
             };
 
             const response = await api.post('/rides', rideData, token);
 
             if (response.success || response.data) {
                 alert('Ride published successfully!');
-                navigate('/provider/dashboard'); // Redirect to dashboard
+                navigate('/provider-home'); // Redirect to provider home
             }
         } catch (error) {
             console.error('Error publishing ride:', error);

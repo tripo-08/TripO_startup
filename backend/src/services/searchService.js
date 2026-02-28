@@ -23,11 +23,21 @@ class SearchService {
    */
   async searchRides(filters = {}) {
     try {
+      const enforceBookableOnly = filters.includeUnavailable !== true;
+
       // Try to get cached results first using enhanced cache service
       const cachedResults = await cacheService.getCachedSearchResults(filters);
       if (cachedResults) {
         logger.info('Returning cached search results from enhanced cache');
-        return cachedResults;
+        if (!enforceBookableOnly || !Array.isArray(cachedResults.rides)) {
+          return cachedResults;
+        }
+        const visibleRides = cachedResults.rides.filter((ride) => this.isRideVisibleForPassenger(ride));
+        return {
+          ...cachedResults,
+          rides: visibleRides,
+          total: visibleRides.length
+        };
       }
 
       // Perform database search
@@ -118,6 +128,13 @@ class SearchService {
    */
   applyClientSideFilters(rides, filters) {
     let filteredRides = rides;
+
+    // Default behavior for passenger suggestions:
+    // - hide full rides
+    // - hide past-departure rides
+    if (filters.includeUnavailable !== true) {
+      filteredRides = filteredRides.filter((ride) => this.isRideVisibleForPassenger(ride));
+    }
 
     // Filter by maximum price
     if (filters.maxPrice) {
@@ -235,6 +252,36 @@ class SearchService {
     }
 
     return filteredRides;
+  }
+
+  /**
+   * Convert ride date/time to a JS Date (supports both model instances and plain summaries)
+   */
+  getRideDepartureDateTime(ride) {
+    if (!ride) return null;
+    const datePart = ride.departureDate || ride.date;
+    const timePart = ride.departureTime || ride.time;
+    if (!datePart || !timePart) return null;
+    const departure = new Date(`${datePart}T${timePart}`);
+    if (Number.isNaN(departure.getTime())) return null;
+    return departure;
+  }
+
+  /**
+   * Passenger visibility rule:
+   * only published rides, with seats available, and not expired by departure datetime.
+   */
+  isRideVisibleForPassenger(ride) {
+    if (!ride) return false;
+    const status = (ride.status || '').toLowerCase();
+    if (status && status !== 'published') return false;
+
+    const availableSeats = Number(ride.availableSeats ?? ride.seatsAvailable ?? 0);
+    if (!Number.isFinite(availableSeats) || availableSeats <= 0) return false;
+
+    const departure = this.getRideDepartureDateTime(ride);
+    if (!departure) return false;
+    return departure > new Date();
   }
 
   /**

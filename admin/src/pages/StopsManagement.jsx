@@ -73,6 +73,19 @@ const StopsManagement = () => {
         setError('');
 
         try {
+            const lat = Number(newStop.lat);
+            const lng = Number(newStop.lng);
+            if (!newStop.name?.trim()) {
+                setError('Stop name is required');
+                setSubmitting(false);
+                return;
+            }
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                setError('Please provide valid latitude and longitude');
+                setSubmitting(false);
+                return;
+            }
+
             const token = localStorage.getItem('adminToken');
             const response = await fetch(`${API_URL}/admin/stops`, {
                 method: 'POST',
@@ -80,7 +93,7 @@ const StopsManagement = () => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify(newStop)
+                body: JSON.stringify({ ...newStop, lat, lng })
             });
 
             const data = await response.json();
@@ -165,6 +178,7 @@ const StopsManagement = () => {
 
     const updateNewStopMarker = (lat, lng) => {
         if (!mapInstanceRef.current || !olaMapsRef.current) return;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
         if (newStopMarkerRef.current) {
             newStopMarkerRef.current.setLngLat([lng, lat]);
@@ -183,11 +197,22 @@ const StopsManagement = () => {
         markersRef.current.forEach(marker => marker.remove());
         markersRef.current = [];
 
+        const PopupCtor = window.OlaMaps?.Popup || null;
+
         stops.forEach(stop => {
+            const lat = Number(stop.lat);
+            const lng = Number(stop.lng);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                return;
+            }
             const marker = olaMapsRef.current.addMarker({ offset: [0, -10], anchor: 'bottom', color: 'blue' })
-                .setLngLat([parseFloat(stop.lng), parseFloat(stop.lat)])
-                .setPopup(new olaMapsRef.current.Popup({ offset: [0, -10] }).setHTML(stop.name))
-                .addTo(mapInstanceRef.current);
+                .setLngLat([lng, lat]);
+
+            if (PopupCtor) {
+                marker.setPopup(new PopupCtor({ offset: [0, -10] }).setHTML(stop.name));
+            }
+
+            marker.addTo(mapInstanceRef.current);
             markersRef.current.push(marker);
         });
 
