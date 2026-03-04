@@ -21,18 +21,27 @@ async function initializeRedis() {
     }
 
     // Production mode - Redis is required
-    const redisConfig = {
-      socket: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT) || 6379,
-      },
-      database: parseInt(process.env.REDIS_DB) || 0,
-    };
+let redisConfig;
 
-    // Add password if provided
-    if (process.env.REDIS_PASSWORD) {
-      redisConfig.password = process.env.REDIS_PASSWORD;
-    }
+if (process.env.REDIS_URL) {
+  // Production (Render)
+  redisConfig = {
+    url: process.env.REDIS_URL
+  };
+} else {
+  // Local development
+  redisConfig = {
+    socket: {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT) || 6379,
+    },
+    database: parseInt(process.env.REDIS_DB) || 0,
+  };
+
+  if (process.env.REDIS_PASSWORD) {
+    redisConfig.password = process.env.REDIS_PASSWORD;
+  }
+}
 
     redisClient = createClient(redisConfig);
 
