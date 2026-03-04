@@ -22,7 +22,6 @@ const logger = require('./utils/logger');
 // Import enhanced security middleware
 const {
   enhancedSecurityHeaders,
-  enhancedCorsConfig,
   requestFingerprinting,
   validateApiKey,
   timingAttackProtection,
@@ -87,15 +86,26 @@ async function startServer() {
     }, 300000); // Every 5 minutes
 
     // CORS middleware - applied early to handle preflight requests
-    app.use(cors(enhancedCorsConfig()));
+// CORS middleware - applied early to handle preflight requests
+app.use(cors({
+  origin: [
+    "https://tripo-travel.netlify.app",
+    "http://localhost:5173"
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
 
-    // Enhanced security middleware - applied after CORS
-    app.use(enhancedSecurityHeaders());
-    app.use(requestLimits());
-    app.use(ipFiltering());
-    app.use(honeypot());
-    app.use(requestFingerprinting());
-    app.use(timingAttackProtection());
+app.options("*", cors());
+
+// Enhanced security middleware
+app.use(enhancedSecurityHeaders());
+app.use(requestLimits());
+app.use(ipFiltering());
+app.use(honeypot());
+app.use(requestFingerprinting());
+app.use(timingAttackProtection());
 
     // Monitoring middleware
     app.use(connectionTracking);
