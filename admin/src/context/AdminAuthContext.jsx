@@ -19,10 +19,11 @@ export const AdminAuthProvider = ({ children }) => {
         setLoading(false);
     }, []);
 
-    // NOTE: Hardcoding 'http://localhost:3000/api' if env var not present, same as original
+    // Use backend root URL; routes are prefixed with /api
     const login = async (username, password) => {
         try {
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/admin/login`, {
+            const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const response = await fetch(`${apiBase}/api/admin/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

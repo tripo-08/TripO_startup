@@ -24,28 +24,33 @@ const AdminDashboard = () => {
     });
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchStats = async () => {
-            try {
-                const token = localStorage.getItem('adminToken');
-                const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/admin/dashboard`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                const data = await response.json();
-                if (data.success) {
-                    setStats(data.data);
-                }
-            } catch (error) {
-                console.error('Error fetching stats:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
+useEffect(() => {
+    const fetchStats = async () => {
+        try {
+            const token = localStorage.getItem('adminToken');
+            const API = import.meta.env.VITE_API_URL;
 
-        fetchStats();
-    }, []);
+            const response = await fetch(`${API}/api/admin/dashboard`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                setStats(data.data);
+            }
+
+        } catch (error) {
+            console.error('Error fetching stats:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    fetchStats();
+}, []);
 
     if (loading) return <div className="text-white">Loading stats...</div>;
 

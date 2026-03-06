@@ -1,27 +1,43 @@
-import React, { useState } from 'react';
-import { useAdminAuth } from '../context/AdminAuthContext';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from "react";
+import { useAdminAuth } from "../context/AdminAuthContext";
+import { useNavigate } from "react-router-dom";
 
 const AdminLogin = () => {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
+    const [username, setUsername] = useState("");
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+    const [loading, setLoading] = useState(false);
+
     const { login } = useAdminAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setError('');
-        const result = await login(username, password);
-        if (!result.success) {
-            setError(result.error);
+        setError("");
+        setLoading(true);
+
+        try {
+            const result = await login(username, password);
+
+            if (result.success) {
+                navigate("/admin/dashboard"); // redirect after login
+            } else {
+                setError(result.error || "Login failed");
+            }
+        } catch (err) {
+            console.error("Login error:", err);
+            setError("Server error. Please try again.");
+        } finally {
+            setLoading(false);
         }
     };
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
             <div className="bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-md border border-gray-700">
-                <h2 className="text-3xl font-bold mb-6 text-center text-blue-500">TripO Admin</h2>
+                <h2 className="text-3xl font-bold mb-6 text-center text-blue-500">
+                    TripO Admin
+                </h2>
 
                 {error && (
                     <div className="bg-red-500/10 border border-red-500 text-red-500 p-3 rounded mb-4 text-sm text-center">
@@ -31,7 +47,9 @@ const AdminLogin = () => {
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div>
-                        <label className="block text-sm font-medium mb-2 text-gray-400">Username</label>
+                        <label className="block text-sm font-medium mb-2 text-gray-400">
+                            Username
+                        </label>
                         <input
                             type="text"
                             value={username}
@@ -43,7 +61,9 @@ const AdminLogin = () => {
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium mb-2 text-gray-400">Password</label>
+                        <label className="block text-sm font-medium mb-2 text-gray-400">
+                            Password
+                        </label>
                         <input
                             type="password"
                             value={password}
@@ -56,9 +76,10 @@ const AdminLogin = () => {
 
                     <button
                         type="submit"
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded transition-colors"
+                        disabled={loading}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded transition-colors disabled:opacity-50"
                     >
-                        Login
+                        {loading ? "Logging in..." : "Login"}
                     </button>
                 </form>
             </div>
