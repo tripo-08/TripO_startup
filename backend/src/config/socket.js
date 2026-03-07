@@ -21,6 +21,14 @@ function parseAllowedOrigins() {
   return Array.from(new Set([...defaults, ...envOrigins]));
 }
 
+function isOriginAllowed(origin, allowedOrigins) {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  if (/^https:\/\/[a-z0-9-]+\.netlify\.app$/i.test(origin)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+  return false;
+}
+
 /**
  * Initialize Socket.io server
  * @param {Object} server - HTTP server instance
@@ -29,7 +37,11 @@ function parseAllowedOrigins() {
 function initializeSocket(server) {
   io = new Server(server, {
     cors: {
-      origin: parseAllowedOrigins(),
+      origin: (origin, callback) => {
+        const allowedOrigins = parseAllowedOrigins();
+        if (isOriginAllowed(origin, allowedOrigins)) return callback(null, true);
+        return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+      },
       methods: ['GET', 'POST'],
       credentials: true,
     },

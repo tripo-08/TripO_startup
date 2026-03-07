@@ -63,6 +63,19 @@ function parseAllowedOrigins() {
   return Array.from(new Set([...defaults, ...envOrigins]));
 }
 
+function isOriginAllowed(origin, allowedOrigins) {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+
+  // Allow Netlify preview/production URLs to avoid breakage on new deploy subdomains
+  if (/^https:\/\/[a-z0-9-]+\.netlify\.app$/i.test(origin)) return true;
+
+  // Allow common localhost dev origins
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+
+  return false;
+}
+
 async function startServer() {
   try {
     // Initialize Firebase Admin SDK
@@ -108,7 +121,7 @@ async function startServer() {
       origin: (origin, callback) => {
         // Allow non-browser clients and same-origin requests without Origin header
         if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) return callback(null, true);
+        if (isOriginAllowed(origin, allowedOrigins)) return callback(null, true);
         logger.warn(`CORS blocked request from origin: ${origin}`);
         return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
       },
