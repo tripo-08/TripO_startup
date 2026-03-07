@@ -4,6 +4,23 @@ const { verifyFirebaseToken } = require('../middleware/auth');
 
 let io;
 
+function parseAllowedOrigins() {
+  const envOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const defaults = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'https://tripo-travel.netlify.app',
+  ];
+
+  return Array.from(new Set([...defaults, ...envOrigins]));
+}
+
 /**
  * Initialize Socket.io server
  * @param {Object} server - HTTP server instance
@@ -12,7 +29,7 @@ let io;
 function initializeSocket(server) {
   io = new Server(server, {
     cors: {
-      origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
+      origin: parseAllowedOrigins(),
       methods: ['GET', 'POST'],
       credentials: true,
     },

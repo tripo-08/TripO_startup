@@ -46,6 +46,23 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
+function parseAllowedOrigins() {
+  const envOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const defaults = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'https://tripo-travel.netlify.app',
+  ];
+
+  return Array.from(new Set([...defaults, ...envOrigins]));
+}
+
 async function startServer() {
   try {
     // Initialize Firebase Admin SDK
@@ -86,18 +103,22 @@ async function startServer() {
     }, 300000); // Every 5 minutes
 
     // CORS middleware - applied early to handle preflight requests
-// CORS middleware - applied early to handle preflight requests
-app.use(cors({
-  origin: [
-    "https://tripo-travel.netlify.app",
-    "http://localhost:5173"
-  ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
-}));
+    const allowedOrigins = parseAllowedOrigins();
+    const corsOptions = {
+      origin: (origin, callback) => {
+        // Allow non-browser clients and same-origin requests without Origin header
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        logger.warn(`CORS blocked request from origin: ${origin}`);
+        return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+      },
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-API-Key'],
+      credentials: true,
+    };
 
-app.options("*", cors());
+    app.use(cors(corsOptions));
+    app.options('*', cors(corsOptions));
 
 // Enhanced security middleware
 app.use(enhancedSecurityHeaders());
