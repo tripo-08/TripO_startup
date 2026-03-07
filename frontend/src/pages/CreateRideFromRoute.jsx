@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Calendar, Clock, Users, DollarSign, Car, Route, ChevronRight, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
 import { authService } from '../services/auth';
+import { API_BASE_URL } from '../config/apiBase';
 import { getAuth } from "firebase/auth";
 import polyline from '@mapbox/polyline';
 
@@ -40,7 +41,7 @@ const CreateRideFromRoute = () => {
     const [sourceCoords, setSourceCoords] = useState(null);
     const [destCoords, setDestCoords] = useState(null);
 
-    const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3000/api';
+    const API_URL = API_BASE_URL;
 
     const mapContainerRef = useRef(null);
     const mapInstanceRef = useRef(null);

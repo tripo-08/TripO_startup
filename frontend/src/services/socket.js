@@ -1,10 +1,11 @@
 import { io } from 'socket.io-client';
 import { authService } from './auth';
+import { API_BASE_URL } from '../config/apiBase';
 
 let socketInstance = null;
 
 const getSocketUrl = () => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3000/api';
+    const apiUrl = API_BASE_URL;
     try {
         const url = new URL(apiUrl);
         url.pathname = '';
@@ -12,6 +13,9 @@ const getSocketUrl = () => {
         url.hash = '';
         return url.toString().replace(/\/$/, '');
     } catch (e) {
+        if (typeof window !== 'undefined' && window.location?.origin) {
+            return window.location.origin;
+        }
         return apiUrl.replace(/\/api\/?$/, '');
     }
 };

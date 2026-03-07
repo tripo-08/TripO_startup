@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3000/api';
+import { API_BASE_URL } from '../config/apiBase';
 
 export const api = {
     async get(endpoint, token) {
@@ -10,7 +10,7 @@ export const api = {
             console.warn(`[API] No token found for GET ${endpoint}`);
         }
 
-        const response = await fetch(`${API_URL}${endpoint}`, {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'GET',
             headers,
         });
@@ -36,7 +36,7 @@ export const api = {
             console.warn(`[API] No token found for POST ${endpoint}`);
         }
 
-        const response = await fetch(`${API_URL}${endpoint}`, {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'POST',
             headers,
             body,
@@ -60,7 +60,7 @@ export const api = {
             headers['Authorization'] = `Bearer ${authToken}`;
         }
 
-        const response = await fetch(`${API_URL}${endpoint}`, {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'PUT',
             headers,
             body,
@@ -75,7 +75,7 @@ export const api = {
             headers['Authorization'] = `Bearer ${authToken}`;
         }
 
-        const response = await fetch(`${API_URL}${endpoint}`, {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'DELETE',
             headers,
         });

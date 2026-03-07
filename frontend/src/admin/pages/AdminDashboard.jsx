@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { Users, Car, CheckCircle, XCircle } from 'lucide-react';
+import { API_BASE_URL } from '../../config/apiBase';
 
 const StatCard = ({ title, value, icon: Icon, color }) => (
     <div className="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 flex items-center space-x-4">
@@ -28,7 +29,7 @@ const AdminDashboard = () => {
         const fetchStats = async () => {
             try {
                 const token = localStorage.getItem('adminToken');
-                const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/admin/dashboard`, {
+                const response = await fetch(`${API_BASE_URL}/admin/dashboard`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }

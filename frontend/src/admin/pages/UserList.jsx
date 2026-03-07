@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Trash2, Shield, ShieldOff, Check, X, Ban } from 'lucide-react';
+import { API_BASE_URL } from '../../config/apiBase';
 
 const UserList = ({ type }) => { // type: 'passenger' | 'provider'
     const [users, setUsers] = useState([]);
@@ -10,7 +11,7 @@ const UserList = ({ type }) => { // type: 'passenger' | 'provider'
         setLoading(true);
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/admin/users?type=${type}`, {
+            const response = await fetch(`${API_BASE_URL}/admin/users?type=${type}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -38,7 +39,7 @@ const UserList = ({ type }) => { // type: 'passenger' | 'provider'
 
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/admin/user/${userId}`, {
+            const response = await fetch(`${API_BASE_URL}/admin/user/${userId}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -59,7 +60,7 @@ const UserList = ({ type }) => { // type: 'passenger' | 'provider'
     const handleUpdateStatus = async (userId, action, value) => {
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/admin/user/${userId}`, {
+            const response = await fetch(`${API_BASE_URL}/admin/user/${userId}`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
