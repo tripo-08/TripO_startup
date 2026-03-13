@@ -134,11 +134,12 @@ app.use(responseTracking);
 
 // Serve static files for demo
 app.use('/demo', express.static('public'));
-// Serve uploads directory
-// Ensure the path is absolute and verify existence
+// Serve uploads directory (ensure skipped on Vercel read-only FS)
 const uploadsPath = require('path').join(process.cwd(), 'uploads');
-if (!require('fs').existsSync(uploadsPath)) {
-  require('fs').mkdirSync(uploadsPath, { recursive: true });
+if (!process.env.VERCEL) {
+  if (!require('fs').existsSync(uploadsPath)) {
+    require('fs').mkdirSync(uploadsPath, { recursive: true });
+  }
 }
 app.use('/uploads', express.static(uploadsPath));
 

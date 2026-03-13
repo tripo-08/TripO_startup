@@ -84,11 +84,16 @@ const consoleFormat = winston.format.combine(
   )
 );
 
-// Ensure logs directory exists
-const fs = require('fs');
+// Check if running on Vercel (read-only filesystem)
+const isServerless = !!process.env.VERCEL;
 const logsDir = path.join(process.cwd(), 'logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
+
+// Ensure logs directory exists (skip on Vercel)
+if (!isServerless) {
+  const fs = require('fs');
+  if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+  }
 }
 
 // Define which transports the logger must use
@@ -100,8 +105,8 @@ const transports = [
   })
 ];
 
-// Only add file transports if not disabled (e.g. for testing or local dev conflict avoidance)
-if (process.env.DISABLE_FILE_LOGGING !== 'true') {
+// Only add file transports if not disabled (e.g. for testing, local dev conflict avoidance, or serverless)
+if (process.env.DISABLE_FILE_LOGGING !== 'true' && !isServerless) {
   transports.push(
     // File transport for errors
     new winston.transports.File({
