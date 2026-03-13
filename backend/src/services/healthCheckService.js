@@ -5,7 +5,8 @@ class HealthCheckService {
   constructor() {
     this.checks = new Map();
     this.healthStatus = {
-      status: 'unknown',
+      // Default to healthy so serverless cold starts don't return 503 instantly
+      status: 'healthy',
       timestamp: new Date().toISOString(),
       checks: {},
       uptime: 0,
@@ -13,7 +14,7 @@ class HealthCheckService {
       environment: process.env.NODE_ENV || 'development',
       instanceId: process.env.INSTANCE_ID || require('os').hostname()
     };
-    
+
     this.registerDefaultChecks();
     this.startHealthCheckInterval();
   }
@@ -61,7 +62,7 @@ class HealthCheckService {
     // External services check
     this.registerCheck('external_services', async () => {
       const services = [];
-      
+
       // Check Firebase
       try {
         // Simulate Firebase check
@@ -94,11 +95,11 @@ class HealthCheckService {
       }
 
       const unhealthyServices = services.filter(s => s.status === 'unhealthy');
-      
+
       return {
         status: unhealthyServices.length === 0 ? 'healthy' : 'degraded',
-        message: unhealthyServices.length === 0 
-          ? 'All external services are healthy' 
+        message: unhealthyServices.length === 0
+          ? 'All external services are healthy'
           : `${unhealthyServices.length} external services are unhealthy`,
         services
       };
@@ -110,16 +111,16 @@ class HealthCheckService {
       const memUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
       const memTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
       const memUsagePercent = Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100);
-      
+
       const cpuUsage = process.cpuUsage();
       const uptime = process.uptime();
-      
+
       const isHealthy = memUsagePercent < 90; // Consider unhealthy if memory usage > 90%
-      
+
       return {
         status: isHealthy ? 'healthy' : 'warning',
-        message: isHealthy 
-          ? 'System resources are within normal limits' 
+        message: isHealthy
+          ? 'System resources are within normal limits'
           : 'High memory usage detected',
         metrics: {
           memory: {
@@ -141,14 +142,14 @@ class HealthCheckService {
       try {
         // Check if critical application components are working
         const checks = [];
-        
+
         // Check if we can create a simple object (basic functionality)
         checks.push({
           name: 'basic_functionality',
           status: 'healthy',
           message: 'Basic application functionality is working'
         });
-        
+
         // Check if logging is working
         try {
           logger.info('Health check test log');
@@ -165,13 +166,13 @@ class HealthCheckService {
             error: error.message
           });
         }
-        
+
         const unhealthyChecks = checks.filter(c => c.status === 'unhealthy');
-        
+
         return {
           status: unhealthyChecks.length === 0 ? 'healthy' : 'unhealthy',
-          message: unhealthyChecks.length === 0 
-            ? 'All application components are healthy' 
+          message: unhealthyChecks.length === 0
+            ? 'All application components are healthy'
             : `${unhealthyChecks.length} application components are unhealthy`,
           checks
         };
@@ -194,8 +195,8 @@ class HealthCheckService {
       lastCheck: null,
       lastResult: null
     });
-    
-    logger.info(`Health check registered: ${name}`, { 
+
+    logger.info(`Health check registered: ${name}`, {
       category: 'health',
       checkName: name,
       critical: options.critical !== false
@@ -209,18 +210,18 @@ class HealthCheckService {
     }
 
     const startTime = Date.now();
-    
+
     try {
       // Run check with timeout
       const result = await Promise.race([
         check.checkFunction(),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Health check timeout')), check.timeout)
         )
       ]);
 
       const duration = Date.now() - startTime;
-      
+
       const checkResult = {
         name,
         status: result.status || 'healthy',
@@ -241,15 +242,15 @@ class HealthCheckService {
 
       // Record metrics
       metricsService.recordHistogram('health_check_duration_seconds', duration / 1000, { check: name });
-      metricsService.incrementCounter('health_checks_total', 1, { 
-        check: name, 
-        status: checkResult.status 
+      metricsService.incrementCounter('health_checks_total', 1, {
+        check: name,
+        status: checkResult.status
       });
 
       return checkResult;
     } catch (error) {
       const duration = Date.now() - startTime;
-      
+
       const checkResult = {
         name,
         status: 'unhealthy',
@@ -270,9 +271,9 @@ class HealthCheckService {
 
       // Record metrics
       metricsService.recordHistogram('health_check_duration_seconds', duration / 1000, { check: name });
-      metricsService.incrementCounter('health_checks_total', 1, { 
-        check: name, 
-        status: 'unhealthy' 
+      metricsService.incrementCounter('health_checks_total', 1, {
+        check: name,
+        status: 'unhealthy'
       });
 
       return checkResult;
@@ -306,10 +307,10 @@ class HealthCheckService {
     // Determine overall health status
     const criticalChecks = Array.from(this.checks.values()).filter(check => check.critical);
     const criticalResults = criticalChecks.map(check => checkResults[check.name]);
-    
+
     const hasUnhealthyCritical = criticalResults.some(result => result.status === 'unhealthy');
     const hasWarnings = Object.values(checkResults).some(result => result.status === 'warning' || result.status === 'degraded');
-    
+
     let overallStatus = 'healthy';
     if (hasUnhealthyCritical) {
       overallStatus = 'unhealthy';
@@ -364,6 +365,12 @@ class HealthCheckService {
   }
 
   startHealthCheckInterval() {
+    // Disable interval on Vercel (serverless functions freeze between requests, so background loops hang and crash)
+    if (process.env.VERCEL) {
+      logger.info('Running in serverless environment, skipping background health check intervals');
+      return;
+    }
+
     // Run health checks every 30 seconds
     setInterval(async () => {
       try {
@@ -393,7 +400,7 @@ class HealthCheckService {
     const results = await Promise.all(
       criticalChecks.map(name => this.runCheck(name))
     );
-    
+
     return results.every(result => result.status === 'healthy');
   }
 
