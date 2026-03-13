@@ -73,8 +73,32 @@ function isOriginAllowed(origin, allowedOrigins) {
   // Allow common localhost dev origins
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
 
+  // Allow Vercel preview/production URLs
+  if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) return true;
+
   return false;
 }
+
+// ─── CORS middleware applied at MODULE LEVEL ───────────────────────────────────
+// This MUST be before module.exports so that Vercel's serverless runtime
+// has CORS configured on the app immediately when it imports this module.
+// Previously CORS was inside async startServer(), causing a race condition
+// where the first request could arrive before CORS middleware was registered.
+const allowedOrigins = parseAllowedOrigins();
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (isOriginAllowed(origin, allowedOrigins)) return callback(null, true);
+    logger.warn(`CORS blocked request from origin: ${origin}`);
+    return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-API-Key'],
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 async function startServer() {
   try {
@@ -115,31 +139,13 @@ async function startServer() {
       firebaseOptimizationService.cleanupInMemoryCache();
     }, 300000); // Every 5 minutes
 
-    // CORS middleware - applied early to handle preflight requests
-    const allowedOrigins = parseAllowedOrigins();
-    const corsOptions = {
-      origin: (origin, callback) => {
-        // Allow non-browser clients and same-origin requests without Origin header
-        if (!origin) return callback(null, true);
-        if (isOriginAllowed(origin, allowedOrigins)) return callback(null, true);
-        logger.warn(`CORS blocked request from origin: ${origin}`);
-        return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
-      },
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-API-Key'],
-      credentials: true,
-    };
-
-    app.use(cors(corsOptions));
-    app.options('*', cors(corsOptions));
-
-// Enhanced security middleware
-app.use(enhancedSecurityHeaders());
-app.use(requestLimits());
-app.use(ipFiltering());
-app.use(honeypot());
-app.use(requestFingerprinting());
-app.use(timingAttackProtection());
+    // Enhanced security middleware
+    app.use(enhancedSecurityHeaders());
+    app.use(requestLimits());
+    app.use(ipFiltering());
+    app.use(honeypot());
+    app.use(requestFingerprinting());
+    app.use(timingAttackProtection());
 
     // Monitoring middleware
     app.use(connectionTracking);
@@ -303,6 +309,3 @@ process.on('unhandledRejection', (reason, promise) => {
 startServer();
 
 module.exports = app;
-
-// Force restart 6
-console.log('Server updated and restarted at', new Date().toISOString());

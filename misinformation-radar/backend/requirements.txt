@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+spacy
+psycopg2-binary
+pydantic
+
+# ML dependencies (placeholders for now)
+torch
+transformers
+scikit-learn
+numpy
+pandas
+networkx
