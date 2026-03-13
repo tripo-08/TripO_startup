@@ -100,6 +100,97 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
+// Enhanced security middleware
+app.use(enhancedSecurityHeaders());
+app.use(requestLimits());
+app.use(ipFiltering());
+app.use(honeypot());
+app.use(requestFingerprinting());
+app.use(timingAttackProtection());
+
+// Monitoring middleware
+app.use(connectionTracking);
+app.use(requestTracking);
+app.use(performanceMonitoring);
+app.use(rateLimitingMetrics);
+
+// Audit logging for sensitive operations
+app.use(auditLogging({
+  logSensitiveOnly: true,
+  includeResponseBody: false,
+}));
+
+// API key validation
+app.use(validateApiKey());
+
+app.use(compression());
+
+app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Response tracking middleware (after body parsing)
+app.use(responseTracking);
+
+// Serve static files for demo
+app.use('/demo', express.static('public'));
+// Serve uploads directory
+// Ensure the path is absolute and verify existence
+const uploadsPath = require('path').join(process.cwd(), 'uploads');
+if (!require('fs').existsSync(uploadsPath)) {
+  require('fs').mkdirSync(uploadsPath, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsPath));
+
+// Setup custom middleware
+setupMiddleware(app);
+
+// Setup API routes
+setupRoutes(app);
+
+// Health and monitoring endpoints
+const healthRoutes = require('./routes/health');
+app.use('/', healthRoutes);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV,
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: {
+      code: 'NOT_FOUND',
+      message: 'Endpoint not found',
+      timestamp: new Date().toISOString(),
+    },
+  });
+});
+
+// Global error handler with metrics
+app.use(errorTracking);
+app.use((err, req, res, next) => {
+  logger.error('Unhandled error:', err);
+
+  res.status(err.status || 500).json({
+    success: false,
+    error: {
+      code: err.code || 'INTERNAL_SERVER_ERROR',
+      message: process.env.NODE_ENV === 'production'
+        ? 'Something went wrong'
+        : err.message,
+      timestamp: new Date().toISOString(),
+    },
+  });
+});
+
 async function startServer() {
   try {
     // Initialize Firebase Admin SDK
@@ -139,99 +230,8 @@ async function startServer() {
       firebaseOptimizationService.cleanupInMemoryCache();
     }, 300000); // Every 5 minutes
 
-    // Enhanced security middleware
-    app.use(enhancedSecurityHeaders());
-    app.use(requestLimits());
-    app.use(ipFiltering());
-    app.use(honeypot());
-    app.use(requestFingerprinting());
-    app.use(timingAttackProtection());
-
-    // Monitoring middleware
-    app.use(connectionTracking);
-    app.use(requestTracking);
-    app.use(performanceMonitoring);
-    app.use(rateLimitingMetrics);
-
-    // Audit logging for sensitive operations
-    app.use(auditLogging({
-      logSensitiveOnly: true,
-      includeResponseBody: false,
-    }));
-
-    // API key validation
-    app.use(validateApiKey());
-
-    app.use(compression());
-
-    app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
-    app.use(express.json({ limit: '10mb' }));
-    app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-    // Response tracking middleware (after body parsing)
-    app.use(responseTracking);
-
-    // Serve static files for demo
-    app.use('/demo', express.static('public'));
-    // Serve uploads directory
-    // Ensure the path is absolute and verify existence
-    const uploadsPath = require('path').join(process.cwd(), 'uploads');
-    if (!require('fs').existsSync(uploadsPath)) {
-      require('fs').mkdirSync(uploadsPath, { recursive: true });
-    }
-    app.use('/uploads', express.static(uploadsPath));
-
-    // Setup custom middleware
-    setupMiddleware(app);
-
-    // Setup API routes
-    setupRoutes(app);
-
-    // Health and monitoring endpoints
-    const healthRoutes = require('./routes/health');
-    app.use('/', healthRoutes);
-
-    // Health check endpoint
-    app.get('/health', (req, res) => {
-      res.status(200).json({
-        status: 'OK',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        environment: process.env.NODE_ENV,
-      });
-    });
-
-    // 404 handler
-    app.use('*', (req, res) => {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Endpoint not found',
-          timestamp: new Date().toISOString(),
-        },
-      });
-    });
-
-    // Global error handler with metrics
-    app.use(errorTracking);
-    app.use((err, req, res, next) => {
-      logger.error('Unhandled error:', err);
-
-      res.status(err.status || 500).json({
-        success: false,
-        error: {
-          code: err.code || 'INTERNAL_SERVER_ERROR',
-          message: process.env.NODE_ENV === 'production'
-            ? 'Something went wrong'
-            : err.message,
-          timestamp: new Date().toISOString(),
-        },
-      });
-    });
-
-    // Only start server if not in test environment
-    if (process.env.NODE_ENV !== 'test') {
+    // Only start server if not in test environment AND not on Vercel
+    if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
       server.listen(PORT, () => {
         logger.info(`TripO Backend API server running on port ${PORT}`);
         logger.info(`Environment: ${process.env.NODE_ENV}`);
