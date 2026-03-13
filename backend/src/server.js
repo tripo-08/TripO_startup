@@ -241,9 +241,12 @@ async function startServer() {
     }
 
   } catch (error) {
-    logger.error('Failed to start server:', error);
-    if (process.env.NODE_ENV !== 'test') {
-      process.exit(1);
+    logger.error('Failed to start server components:', error);
+    // Do NOT exit the process on Vercel — we still want the Express app to handle requests
+    // even if some background components (like Redis) failed to start.
+    if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+      // Only exit if we are NOT on Vercel
+      // process.exit(1);
     }
   }
 }
@@ -259,13 +262,13 @@ process.on('SIGTERM', () => {
     // Close database connections, cleanup resources, etc.
     // Add cleanup code here
 
-    process.exit(0);
+    if (!process.env.VERCEL) process.exit(0);
   });
 
   // Force close after 30 seconds
   setTimeout(() => {
     logger.error('Could not close connections in time, forcefully shutting down');
-    process.exit(1);
+    if (!process.env.VERCEL) process.exit(1);
   }, 30000);
 });
 
@@ -274,12 +277,12 @@ process.on('SIGINT', () => {
 
   server.close(() => {
     logger.info('HTTP server closed');
-    process.exit(0);
+    if (!process.env.VERCEL) process.exit(0);
   });
 
   setTimeout(() => {
     logger.error('Could not close connections in time, forcefully shutting down');
-    process.exit(1);
+    if (!process.env.VERCEL) process.exit(1);
   }, 30000);
 });
 
@@ -290,8 +293,8 @@ process.on('uncaughtException', (error) => {
   // Record critical error metric
   metricsService.incrementCounter('uncaught_exceptions_total', 1);
 
-  // Graceful shutdown
-  process.exit(1);
+  // Graceful shutdown only if not serverless
+  if (!process.env.VERCEL) process.exit(1);
 });
 
 // Handle unhandled promise rejections
@@ -301,8 +304,8 @@ process.on('unhandledRejection', (reason, promise) => {
   // Record critical error metric
   metricsService.incrementCounter('unhandled_rejections_total', 1);
 
-  // Graceful shutdown
-  process.exit(1);
+  // Graceful shutdown only if not serverless
+  if (!process.env.VERCEL) process.exit(1);
 });
 
 // Initialize server setup

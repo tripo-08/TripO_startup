@@ -21,27 +21,27 @@ async function initializeRedis() {
     }
 
     // Production mode - Redis is required
-let redisConfig;
+    let redisConfig;
 
-if (process.env.REDIS_URL) {
-  // Production (Render)
-  redisConfig = {
-    url: process.env.REDIS_URL
-  };
-} else {
-  // Local development
-  redisConfig = {
-    socket: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT) || 6379,
-    },
-    database: parseInt(process.env.REDIS_DB) || 0,
-  };
+    if (process.env.REDIS_URL) {
+      // Production (Render)
+      redisConfig = {
+        url: process.env.REDIS_URL
+      };
+    } else {
+      // Local development
+      redisConfig = {
+        socket: {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: parseInt(process.env.REDIS_PORT) || 6379,
+        },
+        database: parseInt(process.env.REDIS_DB) || 0,
+      };
 
-  if (process.env.REDIS_PASSWORD) {
-    redisConfig.password = process.env.REDIS_PASSWORD;
-  }
-}
+      if (process.env.REDIS_PASSWORD) {
+        redisConfig.password = process.env.REDIS_PASSWORD;
+      }
+    }
 
     redisClient = createClient(redisConfig);
 
@@ -64,12 +64,12 @@ if (process.env.REDIS_URL) {
 
     // Connect to Redis
     await redisClient.connect();
-    
+
     logger.info('Redis connection established successfully');
     return redisClient;
   } catch (error) {
-    if (process.env.NODE_ENV === 'development') {
-      logger.warn('Redis not available in development mode, continuing without cache:', error.message);
+    if (process.env.NODE_ENV === 'development' || process.env.VERCEL) {
+      logger.warn('Redis not available, continuing without cache:', error.message);
       redisClient = null;
       return null;
     } else {
