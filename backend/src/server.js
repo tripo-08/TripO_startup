@@ -136,10 +136,12 @@ app.use(responseTracking);
 app.use('/demo', express.static('public'));
 // Serve uploads directory (ensure skipped on Vercel read-only FS)
 const uploadsPath = require('path').join(process.cwd(), 'uploads');
-if (!process.env.VERCEL) {
+try {
   if (!require('fs').existsSync(uploadsPath)) {
     require('fs').mkdirSync(uploadsPath, { recursive: true });
   }
+} catch (e) {
+  logger.warn('Could not create uploads directory (expected on serverless read-only filesystems)');
 }
 app.use('/uploads', express.static(uploadsPath));
 

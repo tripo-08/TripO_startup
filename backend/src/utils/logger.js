@@ -84,16 +84,21 @@ const consoleFormat = winston.format.combine(
   )
 );
 
-// Check if running on Vercel (read-only filesystem)
-const isServerless = !!process.env.VERCEL;
 const logsDir = path.join(process.cwd(), 'logs');
+let canWriteLogs = false;
 
-// Ensure logs directory exists (skip on Vercel)
-if (!isServerless) {
+// Try to ensure logs directory exists, silently fail on read-only filesystems (like Vercel)
+try {
   const fs = require('fs');
   if (!fs.existsSync(logsDir)) {
     fs.mkdirSync(logsDir, { recursive: true });
   }
+  // Test write access
+  fs.accessSync(logsDir, fs.constants.W_OK);
+  canWriteLogs = true;
+} catch (e) {
+  // Read-only filesystem, file logging will be disabled
+  canWriteLogs = false;
 }
 
 // Define which transports the logger must use
@@ -105,8 +110,8 @@ const transports = [
   })
 ];
 
-// Only add file transports if not disabled (e.g. for testing, local dev conflict avoidance, or serverless)
-if (process.env.DISABLE_FILE_LOGGING !== 'true' && !isServerless) {
+// Only add file transports if not disabled and we have write access
+if (process.env.DISABLE_FILE_LOGGING !== 'true' && canWriteLogs) {
   transports.push(
     // File transport for errors
     new winston.transports.File({
